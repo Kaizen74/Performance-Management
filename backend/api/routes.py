@@ -11,8 +11,8 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Body
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ..processors import DocumentProcessor
-from ..analyzers import (
+from processors import DocumentProcessor
+from analyzers import (
     StrategySynthesizer,
     AlignmentAnalyzer,
     GoalRecommendationEngine,
@@ -21,7 +21,7 @@ from ..analyzers import (
     MockAlignmentClient,
     MockRecommendationClient,
 )
-from ..exports import ExcelExportEngine, PDFExportEngine
+from exports import ExcelExportEngine, PDFExportEngine
 
 
 router = APIRouter()
