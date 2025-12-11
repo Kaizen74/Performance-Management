@@ -8,6 +8,7 @@ import uuid
 import tempfile
 from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException, Body
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..processors import DocumentProcessor
@@ -20,6 +21,7 @@ from ..analyzers import (
     MockAlignmentClient,
     MockRecommendationClient,
 )
+from ..exports import ExcelExportEngine, PDFExportEngine
 
 
 router = APIRouter()
@@ -50,6 +52,7 @@ class DocumentResponse(BaseModel):
 document_store = {}
 framework_store = {}
 analysis_store = {}
+recommendation_store = {}
 
 
 @router.post("/test-connection")
@@ -251,6 +254,9 @@ async def generate_recommendations(
         engine = GoalRecommendationEngine(claude_client=client)
         recommendations = engine.generate_recommendations(framework, analysis, analysis)
 
+        # Store recommendations for export
+        recommendation_store[document_id] = recommendations
+
         return recommendations
 
     except Exception as e:
@@ -285,4 +291,91 @@ async def reset_all():
     document_store.clear()
     framework_store.clear()
     analysis_store.clear()
+    recommendation_store.clear()
     return {"reset": True}
+
+
+@router.post("/export/excel")
+async def export_excel():
+    """Export all analyses to Excel workbook."""
+    if not framework_store:
+        raise HTTPException(status_code=400, detail="No strategic framework available")
+    if not analysis_store:
+        raise HTTPException(status_code=400, detail="No analyses available to export")
+
+    try:
+        framework = list(framework_store.values())[0]
+        analyses = list(analysis_store.values())
+
+        # Create temp file for export
+        with tempfile.NamedTemporaryFile(
+            suffix='.xlsx',
+            prefix='sgaa_export_',
+            delete=False
+        ) as tmp:
+            output_path = tmp.name
+
+        # Generate Excel workbook
+        engine = ExcelExportEngine(framework, analyses, recommendation_store)
+        engine.generate_workbook(output_path)
+
+        return FileResponse(
+            path=output_path,
+            filename="strategic_goal_alignment_analysis.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            background=None  # Don't delete file immediately
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/export/pdf")
+async def export_pdf():
+    """Export analysis summary to PDF report."""
+    if not framework_store:
+        raise HTTPException(status_code=400, detail="No strategic framework available")
+    if not analysis_store:
+        raise HTTPException(status_code=400, detail="No analyses available to export")
+
+    try:
+        framework = list(framework_store.values())[0]
+        analyses = list(analysis_store.values())
+
+        # Create temp file for export
+        with tempfile.NamedTemporaryFile(
+            suffix='.pdf',
+            prefix='sgaa_report_',
+            delete=False
+        ) as tmp:
+            output_path = tmp.name
+
+        # Generate PDF report
+        engine = PDFExportEngine(framework, analyses, recommendation_store)
+        engine.generate_report(output_path)
+
+        return FileResponse(
+            path=output_path,
+            filename="strategic_goal_alignment_report.pdf",
+            media_type="application/pdf",
+            background=None
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export/status")
+async def export_status():
+    """Get current export status and availability."""
+    has_framework = len(framework_store) > 0
+    has_analyses = len(analysis_store) > 0
+    has_recommendations = len(recommendation_store) > 0
+
+    return {
+        "canExport": has_framework and has_analyses,
+        "frameworkAvailable": has_framework,
+        "analysesCount": len(analysis_store),
+        "recommendationsCount": len(recommendation_store),
+        "message": "Ready to export" if (has_framework and has_analyses) else "Complete analysis before exporting"
+    }

@@ -113,7 +113,8 @@ export type AnalysisStep =
   | 'framework'
   | 'dashboard'
   | 'documentDetail'
-  | 'recommendations';
+  | 'recommendations'
+  | 'export';
 
 interface AnalysisState {
   apiKey: string | null;

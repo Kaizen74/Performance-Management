@@ -6,6 +6,7 @@ import { StrategicFrameworkView } from './components/StrategicFrameworkView';
 import { AlignmentDashboard } from './components/AlignmentDashboard';
 import { DocumentScorecard } from './components/DocumentScorecard';
 import { RecommendationsPanel } from './components/RecommendationsPanel';
+import { ExportPanel } from './components/ExportPanel';
 
 function AppContent() {
   const { currentStep, error, setError } = useAnalysis();
@@ -68,6 +69,7 @@ function AppContent() {
         {currentStep === 'dashboard' && <AlignmentDashboard />}
         {currentStep === 'documentDetail' && <DocumentScorecard />}
         {currentStep === 'recommendations' && <RecommendationsPanel />}
+        {currentStep === 'export' && <ExportPanel />}
       </main>
 
       {/* Footer */}
@@ -89,6 +91,7 @@ function StepIndicator({ currentStep }: { currentStep: string }) {
     { id: 'uploadGoals', label: 'Goals' },
     { id: 'processing', label: 'Analysis' },
     { id: 'dashboard', label: 'Results' },
+    { id: 'export', label: 'Export' },
   ];
 
   const currentIndex = steps.findIndex(s => s.id === currentStep);

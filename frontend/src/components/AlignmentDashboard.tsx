@@ -231,12 +231,20 @@ export function AlignmentDashboard() {
         >
           View Strategic Framework
         </button>
-        <button
-          onClick={() => window.print()}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          Export PDF Report
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setCurrentStep('recommendations')}
+            className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            View Recommendations
+          </button>
+          <button
+            onClick={() => setCurrentStep('export')}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Export Reports
+          </button>
+        </div>
       </div>
     </div>
   );

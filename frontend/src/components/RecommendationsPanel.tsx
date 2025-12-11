@@ -259,10 +259,10 @@ export function RecommendationsPanel() {
               Copy Goals
             </button>
             <button
-              onClick={() => window.print()}
+              onClick={() => setCurrentStep('export')}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Export PDF
+              Export Reports
             </button>
           </div>
         </div>
