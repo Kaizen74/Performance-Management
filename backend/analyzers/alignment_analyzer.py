@@ -654,6 +654,15 @@ class MockAlignmentClient:
         # Detect goals from text (simple parsing)
         goals = self._parse_goals(goal_document_text, job_title, seniority, department)
 
+        # Classify each goal using the Rigor × Alignment matrix
+        classified_goals = self._classify_goals_matrix(goals, strategic_framework)
+
+        # Calculate Coherence Index based on quadrant scoring
+        coherence_analysis = self._calculate_coherence_index(classified_goals, strategic_framework)
+
+        # Generate narrative analysis
+        narrative = self._generate_coherence_narrative(coherence_analysis, strategic_framework)
+
         # Generate role-appropriate assessment
         role_assessment = self._generate_role_assessment(job_title, seniority, len(goals))
 
@@ -679,8 +688,10 @@ class MockAlignmentClient:
             "strategyCoherenceCheck": strategy_coherence,
             "strategicTieBack": strategic_tie_back,
             "roleAppropriatenessAssessment": role_assessment,
-            "goals": goals,
+            "goals": classified_goals,  # Now includes quadrant classification
             "goalSetCoherence": coherence,
+            "coherenceIndex": coherence_analysis,  # New: Quadrant-based coherence index
+            "strategicNarrative": narrative,  # New: Generated narrative analysis
             "recommendations": self._generate_recommendations(job_title, seniority, department)
         }
 
@@ -698,6 +709,320 @@ class MockAlignmentClient:
                     objectives[obj_id] = obj_text
 
         return objectives
+
+    def _classify_goals_matrix(
+        self,
+        goals: List[Dict[str, Any]],
+        framework: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Classify each goal using the Rigor × Alignment matrix.
+
+        Quadrants:
+        - Strategic Driver (Aligned + Outcome): 100 points
+        - Busy Work Trap (Aligned + Output): 50 points
+        - Rogue Project (Misaligned + Outcome): 25 points
+        - Distraction (Misaligned + Output): 0 points
+        """
+        # Define verb categories for rigor check
+        outcome_verbs = [
+            'increase', 'decrease', 'reduce', 'grow', 'save', 'convert',
+            'generate', 'close', 'retain', 'achieve', 'deliver', 'attain',
+            'expand', 'improve', 'maximize', 'minimize', 'accelerate',
+            'eliminate', 'double', 'triple', 'cut', 'boost'
+        ]
+        output_verbs = [
+            'research', 'analyze', 'meet', 'draft', 'create', 'launch',
+            'support', 'review', 'maintain', 'send', 'prepare', 'develop',
+            'implement', 'establish', 'coordinate', 'organize', 'plan',
+            'document', 'attend', 'participate', 'assist', 'help', 'lead'
+        ]
+
+        # Extract strategic pillars/themes for alignment check
+        themes = framework.get('strategicThemes', [])
+        theme_keywords = {}
+        for theme in themes:
+            name = theme.get('name', '')
+            desc = theme.get('description', '')
+            # Build keywords from theme name and description
+            keywords = set(name.lower().split())
+            keywords.update(word.lower() for word in desc.split() if len(word) > 4)
+            theme_keywords[name] = keywords
+
+        # Also extract objective keywords
+        perspectives = framework.get('strategicPerspectives', {})
+        objective_keywords = set()
+        for p_data in perspectives.values():
+            for obj in p_data.get('objectives', []):
+                obj_text = obj.get('objective', '').lower()
+                objective_keywords.update(word for word in obj_text.split() if len(word) > 4)
+
+        classified_goals = []
+        for goal in goals:
+            goal_text = goal.get('goalText', '').lower()
+            goal_words = goal_text.split()
+
+            # Check 1: Rigor (Output vs Outcome)
+            is_outcome = False
+            rigor_verb = None
+            for word in goal_words[:5]:  # Check first few words
+                clean_word = word.strip('.,;:').lower()
+                if clean_word in outcome_verbs:
+                    is_outcome = True
+                    rigor_verb = clean_word
+                    break
+                elif clean_word in output_verbs:
+                    rigor_verb = clean_word
+                    break
+
+            # Also check for quantifiable targets (strong indicator of outcome)
+            has_metrics = any(char.isdigit() for char in goal_text) or '%' in goal_text
+            if has_metrics and any(v in goal_text for v in ['increase', 'reduce', 'grow', 'achieve']):
+                is_outcome = True
+
+            # Check 2: Alignment (does it map to strategic pillars?)
+            is_aligned = False
+            aligned_themes = []
+            alignment_evidence = []
+
+            # Check against each theme
+            for theme_name, keywords in theme_keywords.items():
+                matches = [kw for kw in keywords if kw in goal_text and len(kw) > 3]
+                if len(matches) >= 2 or any(kw in goal_text for kw in keywords if len(kw) > 6):
+                    is_aligned = True
+                    aligned_themes.append(theme_name)
+                    alignment_evidence.extend(matches[:2])
+
+            # Check against strategic objectives
+            obj_matches = [kw for kw in objective_keywords if kw in goal_text]
+            if len(obj_matches) >= 2:
+                is_aligned = True
+                alignment_evidence.extend(obj_matches[:2])
+
+            # Special check: Commercial goals need specific alignment
+            is_commercial = any(ind in goal_text for ind in ['$', 'revenue', 'sales', 'quota', 'deal'])
+            if is_commercial and not aligned_themes:
+                # Generic commercial goal without specific strategic alignment = misaligned
+                is_aligned = False
+
+            # Determine quadrant and assign points
+            if is_aligned and is_outcome:
+                quadrant = "Strategic Driver"
+                quadrant_points = 100
+                quadrant_description = "High value: Links to strategy AND defines measurable result"
+            elif is_aligned and not is_outcome:
+                quadrant = "Busy Work Trap"
+                quadrant_points = 50
+                quadrant_description = "Right intent, weak execution: Links to strategy but defines task, not result"
+            elif not is_aligned and is_outcome:
+                quadrant = "Rogue Project"
+                quadrant_points = 25
+                quadrant_description = "Good execution, wrong direction: Measurable result but doesn't serve current strategy"
+            else:
+                quadrant = "Distraction"
+                quadrant_points = 0
+                quadrant_description = "Low value: Unrelated task that doesn't advance strategic goals"
+
+            # Add classification to goal
+            goal['quadrantClassification'] = {
+                'quadrant': quadrant,
+                'points': quadrant_points,
+                'description': quadrant_description,
+                'rigorCheck': {
+                    'isOutcome': is_outcome,
+                    'verbDetected': rigor_verb,
+                    'hasMetrics': has_metrics
+                },
+                'alignmentCheck': {
+                    'isAligned': is_aligned,
+                    'alignedThemes': aligned_themes,
+                    'evidence': list(set(alignment_evidence))[:3]
+                }
+            }
+
+            classified_goals.append(goal)
+
+        return classified_goals
+
+    def _calculate_coherence_index(
+        self,
+        classified_goals: List[Dict[str, Any]],
+        framework: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Calculate the Coherence Index based on quadrant scoring.
+
+        Formula: (Sum of all Goal Points) / (Total Number of Goals)
+        """
+        if not classified_goals:
+            return {
+                'score': 0,
+                'verdict': 'No goals to analyze',
+                'quadrantDistribution': {},
+                'pillarCoverage': {}
+            }
+
+        # Calculate total points and distribution
+        total_points = 0
+        quadrant_counts = {
+            'Strategic Driver': 0,
+            'Busy Work Trap': 0,
+            'Rogue Project': 0,
+            'Distraction': 0
+        }
+        quadrant_examples = {
+            'Strategic Driver': [],
+            'Busy Work Trap': [],
+            'Rogue Project': [],
+            'Distraction': []
+        }
+
+        for goal in classified_goals:
+            classification = goal.get('quadrantClassification', {})
+            quadrant = classification.get('quadrant', 'Distraction')
+            points = classification.get('points', 0)
+            total_points += points
+            quadrant_counts[quadrant] += 1
+
+            # Store examples for narrative
+            if len(quadrant_examples[quadrant]) < 2:
+                quadrant_examples[quadrant].append({
+                    'goalText': goal.get('goalText', '')[:100],
+                    'verb': classification.get('rigorCheck', {}).get('verbDetected'),
+                    'alignedThemes': classification.get('alignmentCheck', {}).get('alignedThemes', [])
+                })
+
+        # Calculate coherence index (0-100)
+        num_goals = len(classified_goals)
+        coherence_index = (total_points / num_goals) if num_goals > 0 else 0
+
+        # Determine verdict
+        if coherence_index >= 80:
+            verdict = "Highly Aligned & Rigorous"
+        elif coherence_index >= 50:
+            verdict = "Strategically Intentioned but Operationally Weak"
+        else:
+            verdict = "Strategic Drift Detected"
+
+        # Check pillar/theme coverage
+        themes = framework.get('strategicThemes', [])
+        theme_names = [t.get('name', '') for t in themes]
+        covered_themes = set()
+        for goal in classified_goals:
+            aligned = goal.get('quadrantClassification', {}).get('alignmentCheck', {}).get('alignedThemes', [])
+            covered_themes.update(aligned)
+
+        uncovered_themes = [t for t in theme_names if t not in covered_themes]
+        low_coverage_themes = []  # Could enhance with count-based analysis
+
+        return {
+            'score': round(coherence_index, 1),
+            'verdict': verdict,
+            'totalPoints': total_points,
+            'maxPossiblePoints': num_goals * 100,
+            'quadrantDistribution': quadrant_counts,
+            'quadrantExamples': quadrant_examples,
+            'pillarCoverage': {
+                'totalPillars': len(theme_names),
+                'coveredPillars': list(covered_themes),
+                'uncoveredPillars': uncovered_themes,
+                'coveragePercentage': round(len(covered_themes) / len(theme_names) * 100, 1) if theme_names else 0
+            }
+        }
+
+    def _generate_coherence_narrative(
+        self,
+        coherence_analysis: Dict[str, Any],
+        framework: Dict[str, Any]
+    ) -> Dict[str, str]:
+        """
+        Generate the narrative analysis based on coherence index results.
+        """
+        score = coherence_analysis.get('score', 0)
+        verdict = coherence_analysis.get('verdict', '')
+        distribution = coherence_analysis.get('quadrantDistribution', {})
+        examples = coherence_analysis.get('quadrantExamples', {})
+        pillar_coverage = coherence_analysis.get('pillarCoverage', {})
+
+        # Section 1: Strategy Coherence Score
+        coherence_section = f"""Overall Coherence Index: {score}%
+
+Verdict: {verdict}
+
+This score is calculated by assigning weighted points to each goal based on its classification:
+- Strategic Drivers (aligned outcomes): {distribution.get('Strategic Driver', 0)} goals × 100 points
+- Busy Work Traps (aligned outputs): {distribution.get('Busy Work Trap', 0)} goals × 50 points
+- Rogue Projects (misaligned outcomes): {distribution.get('Rogue Project', 0)} goals × 25 points
+- Distractions (misaligned outputs): {distribution.get('Distraction', 0)} goals × 0 points"""
+
+        # Section 2: Alignment Narrative
+        strategic_drivers = distribution.get('Strategic Driver', 0)
+        rogue_projects = distribution.get('Rogue Project', 0)
+
+        alignment_narrative = f"""Alignment Analysis: {strategic_drivers} goals qualify as Strategic Drivers while {rogue_projects} are classified as Rogue Projects.
+
+"""
+        if rogue_projects > 0:
+            rogue_examples = examples.get('Rogue Project', [])
+            alignment_narrative += "Legacy Behavior Detection: Some goals demonstrate measurable outcomes but fail to connect to the current strategic priorities. "
+            if rogue_examples:
+                alignment_narrative += f"For example: '{rogue_examples[0].get('goalText', '')[:80]}...' targets a quantifiable result but does not explicitly align with the strategic themes: {', '.join(pillar_coverage.get('coveredPillars', ['Not specified'])[:3])}."
+        else:
+            alignment_narrative += "No significant legacy behavior detected - goals appear to be written with current strategy in mind."
+
+        # Section 3: Rigor Narrative
+        busy_work = distribution.get('Busy Work Trap', 0)
+        distractions = distribution.get('Distraction', 0)
+
+        rigor_narrative = f"""Rigor Analysis: {busy_work + distractions} goals use output-oriented language (tasks) rather than outcome-oriented language (results).
+
+"""
+        if busy_work > 0:
+            busy_examples = examples.get('Busy Work Trap', [])
+            rigor_narrative += "Motion vs Progress Warning: Several goals confuse activity with achievement. "
+            if busy_examples:
+                verb = busy_examples[0].get('verb', 'analyze')
+                rigor_narrative += f"For example, a goal using '{verb}' could be strengthened by reframing: Instead of 'Analyze customer feedback', consider 'Increase customer satisfaction score by 10% through feedback-driven improvements'."
+
+        # Section 4: Orphan Check
+        uncovered = pillar_coverage.get('uncoveredPillars', [])
+        coverage_pct = pillar_coverage.get('coveragePercentage', 0)
+
+        orphan_narrative = f"""Strategic Pillar Coverage: {coverage_pct}% of strategic themes are addressed by current goals.
+
+"""
+        if uncovered:
+            orphan_narrative += f"Warning: The following strategic pillars are under-supported: {', '.join(uncovered)}. This indicates a high risk of execution failure for these specific objectives. Consider adding goals that directly advance these strategic priorities."
+        else:
+            orphan_narrative += "All strategic pillars have at least one supporting goal. Monitor for adequate depth of coverage."
+
+        return {
+            'coherenceScore': coherence_section,
+            'alignmentNarrative': alignment_narrative,
+            'rigorNarrative': rigor_narrative,
+            'orphanCheck': orphan_narrative,
+            'fullNarrative': f"""STRATEGIC GOAL COHERENCE ASSESSMENT
+
+{coherence_section}
+
+---
+
+ALIGNMENT ANALYSIS (The "What")
+
+{alignment_narrative}
+
+---
+
+RIGOR ANALYSIS (The "How")
+
+{rigor_narrative}
+
+---
+
+STRATEGIC COVERAGE CHECK
+
+{orphan_narrative}"""
+        }
 
     def _calculate_overall_scores(
         self,
