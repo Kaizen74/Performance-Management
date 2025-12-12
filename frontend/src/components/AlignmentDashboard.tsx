@@ -4,7 +4,7 @@ import { PortfolioRanking } from './charts/PortfolioRanking';
 
 // Generate mock data for demonstration
 function generateMockAnalyses(goalDocs: any[]) {
-  return goalDocs.map((doc, i) => ({
+  return goalDocs.map((doc) => ({
     documentId: doc.documentId,
     fileName: doc.fileName,
     overallAlignmentScore: 50 + Math.floor(Math.random() * 40),
@@ -38,6 +38,24 @@ function generateMockAnalyses(goalDocs: any[]) {
       learning: { covered: 1, total: 2, percentage: 50 },
     },
     recommendations: ['Strengthen customer focus', 'Add sustainability goals'],
+    coherenceIndex: {
+      score: 65,
+      verdict: 'Operationally Weak',
+      totalPoints: 175,
+      maxPossiblePoints: 200,
+      quadrantDistribution: {
+        'Strategic Driver': 1,
+        'Busy Work Trap': 1,
+        'Rogue Project': 0,
+        'Distraction': 0,
+      },
+      pillarCoverage: {
+        totalPillars: 4,
+        coveredPillars: ['Process', 'Learning'],
+        uncoveredPillars: ['Financial', 'Customer'],
+        coveragePercentage: 50,
+      },
+    },
   }));
 }
 
@@ -119,6 +137,34 @@ export function AlignmentDashboard() {
     const tier = calculateTier(a.overallAlignmentScore, a.overallImpactScore);
     tierDist[tier.tier]++;
   });
+
+  // Calculate aggregate coherence metrics
+  const portfolioCoherence = {
+    avgScore: 0,
+    totalStrategicDrivers: 0,
+    totalBusyWork: 0,
+    totalRogueProjects: 0,
+    totalDistractions: 0,
+    analysesWithCoherence: 0,
+  };
+
+  analyses.forEach((a) => {
+    if (a.coherenceIndex) {
+      portfolioCoherence.avgScore += a.coherenceIndex.score;
+      portfolioCoherence.totalStrategicDrivers += a.coherenceIndex.quadrantDistribution['Strategic Driver'] || 0;
+      portfolioCoherence.totalBusyWork += a.coherenceIndex.quadrantDistribution['Busy Work Trap'] || 0;
+      portfolioCoherence.totalRogueProjects += a.coherenceIndex.quadrantDistribution['Rogue Project'] || 0;
+      portfolioCoherence.totalDistractions += a.coherenceIndex.quadrantDistribution['Distraction'] || 0;
+      portfolioCoherence.analysesWithCoherence++;
+    }
+  });
+
+  if (portfolioCoherence.analysesWithCoherence > 0) {
+    portfolioCoherence.avgScore = Math.round(portfolioCoherence.avgScore / portfolioCoherence.analysesWithCoherence);
+  }
+
+  const totalGoalsClassified = portfolioCoherence.totalStrategicDrivers + portfolioCoherence.totalBusyWork +
+    portfolioCoherence.totalRogueProjects + portfolioCoherence.totalDistractions;
 
   const handleSelectDocument = (docId: string) => {
     selectDocument(docId);
@@ -213,6 +259,92 @@ export function AlignmentDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Portfolio Coherence Summary */}
+      {portfolioCoherence.analysesWithCoherence > 0 && (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            Portfolio Strategy Coherence
+          </h3>
+
+          {/* Coherence Score Banner */}
+          <div className={`rounded-lg p-4 mb-4 ${
+            portfolioCoherence.avgScore >= 80
+              ? 'bg-teal-50 border border-teal-200'
+              : portfolioCoherence.avgScore >= 50
+              ? 'bg-amber-50 border border-amber-200'
+              : 'bg-rose-50 border border-rose-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Average Coherence Index</p>
+                <p className={`text-3xl font-bold ${
+                  portfolioCoherence.avgScore >= 80
+                    ? 'text-teal-700'
+                    : portfolioCoherence.avgScore >= 50
+                    ? 'text-amber-700'
+                    : 'text-rose-700'
+                }`}>
+                  {portfolioCoherence.avgScore}%
+                </p>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                portfolioCoherence.avgScore >= 80
+                  ? 'bg-teal-100 text-teal-800'
+                  : portfolioCoherence.avgScore >= 50
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-rose-100 text-rose-800'
+              }`}>
+                {portfolioCoherence.avgScore >= 80
+                  ? 'Highly Aligned'
+                  : portfolioCoherence.avgScore >= 50
+                  ? 'Operationally Weak'
+                  : 'Strategic Drift'}
+              </div>
+            </div>
+          </div>
+
+          {/* Portfolio Quadrant Distribution */}
+          <div className="mb-4">
+            <p className="text-sm font-medium text-slate-700 mb-2">
+              Aggregate Goal Classification ({totalGoalsClassified} goals across {portfolioCoherence.analysesWithCoherence} documents)
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="bg-teal-50 border border-teal-200 rounded p-3 text-center">
+                <p className="text-2xl font-bold text-teal-800">{portfolioCoherence.totalStrategicDrivers}</p>
+                <p className="text-xs text-teal-600">Strategic Drivers</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-center">
+                <p className="text-2xl font-bold text-amber-800">{portfolioCoherence.totalBusyWork}</p>
+                <p className="text-xs text-amber-600">Busy Work Traps</p>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded p-3 text-center">
+                <p className="text-2xl font-bold text-orange-800">{portfolioCoherence.totalRogueProjects}</p>
+                <p className="text-xs text-orange-600">Rogue Projects</p>
+              </div>
+              <div className="bg-slate-100 border border-slate-200 rounded p-3 text-center">
+                <p className="text-2xl font-bold text-slate-800">{portfolioCoherence.totalDistractions}</p>
+                <p className="text-xs text-slate-500">Distractions</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Coherence Insight */}
+          <div className="bg-slate-50 rounded p-4">
+            <p className="text-sm text-slate-600">
+              {portfolioCoherence.avgScore >= 80
+                ? 'The portfolio demonstrates strong strategic alignment. Most goals are outcome-focused and directly tied to strategic objectives.'
+                : portfolioCoherence.avgScore >= 50
+                ? 'The portfolio shows moderate alignment but has opportunities for improvement. Consider reframing output-focused goals into measurable outcomes.'
+                : 'The portfolio requires significant revision. Many goals lack clear strategic linkage or focus on activities rather than outcomes.'}
+              {portfolioCoherence.totalDistractions > 0 &&
+                ` There are ${portfolioCoherence.totalDistractions} distraction goals that should be eliminated or redesigned.`}
+              {portfolioCoherence.totalRogueProjects > 0 &&
+                ` ${portfolioCoherence.totalRogueProjects} rogue projects have strong outcomes but need strategic anchoring.`}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

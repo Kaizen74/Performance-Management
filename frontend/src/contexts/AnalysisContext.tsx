@@ -56,11 +56,76 @@ export interface StrategicFramework {
   };
 }
 
+export interface QuadrantClassification {
+  quadrant: 'Strategic Driver' | 'Busy Work Trap' | 'Rogue Project' | 'Distraction';
+  points: number;
+  description: string;
+  rigorCheck: {
+    isOutcome: boolean;
+    verbDetected: string | null;
+    hasMetrics: boolean;
+  };
+  alignmentCheck: {
+    isAligned: boolean;
+    alignedThemes: string[];
+    evidence: string[];
+  };
+}
+
+export interface CoherenceIndex {
+  score: number;
+  verdict: string;
+  totalPoints: number;
+  maxPossiblePoints: number;
+  quadrantDistribution: {
+    'Strategic Driver': number;
+    'Busy Work Trap': number;
+    'Rogue Project': number;
+    'Distraction': number;
+  };
+  pillarCoverage: {
+    totalPillars: number;
+    coveredPillars: string[];
+    uncoveredPillars: string[];
+    coveragePercentage: number;
+  };
+}
+
+export interface StrategicNarrative {
+  coherenceScore: string;
+  alignmentNarrative: string;
+  rigorNarrative: string;
+  orphanCheck: string;
+  fullNarrative: string;
+}
+
 export interface GoalAnalysis {
   documentId: string;
   fileName: string;
   overallAlignmentScore: number;
   overallImpactScore: number;
+  overallCoherenceScore?: number;
+  coherenceIndex?: CoherenceIndex;
+  strategicNarrative?: StrategicNarrative;
+  strategyCoherenceCheck?: {
+    confidenceScore: number;
+    belongsToStrategy: boolean;
+    potentialMismatches: string[];
+    assessment: string;
+  };
+  strategicTieBack?: {
+    visionAlignment: string;
+    missionContribution: string;
+    valuesReflected: string[];
+    strategicThemesCovered: string[];
+    strategicThemesGaps: string[];
+  };
+  employeeContext?: {
+    employeeName: string;
+    jobTitle?: string;
+    department?: string;
+    seniorityLevel?: string;
+  };
   goals: Array<{
     goalId: string;
     goalText: string;
@@ -70,6 +135,32 @@ export interface GoalAnalysis {
     alignmentRationale: string;
     impactRationale: string;
     gaps: string[];
+    quadrantClassification?: QuadrantClassification;
+    alignmentScoreBreakdown?: {
+      totalScore: number;
+      objectiveMappingScore: number;
+      objectiveMappingRationale: string;
+      visionMissionScore: number;
+      visionMissionRationale: string;
+      themeAlignmentScore: number;
+      themeAlignmentRationale: string;
+      roleAppropriatenessScore: number;
+      roleAppropriatenessRationale: string;
+    };
+    strategicTieBack?: {
+      visionConnection: string;
+      missionSupport: string;
+      strategicThemes: string[];
+      objectiveMapping: string;
+    };
+    smartAssessment?: {
+      specific: boolean;
+      measurable: boolean;
+      achievable: boolean;
+      relevant: boolean;
+      timeBound: boolean;
+      notes: string;
+    };
   }>;
   strategicCoverage: {
     [key: string]: {

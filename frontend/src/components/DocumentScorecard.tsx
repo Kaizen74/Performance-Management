@@ -150,6 +150,142 @@ export function DocumentScorecard() {
         </div>
       </div>
 
+      {/* Coherence Index Analysis */}
+      {analysis.coherenceIndex && (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            Strategy Coherence Assessment
+          </h3>
+
+          {/* Coherence Score Banner */}
+          <div className={`rounded-lg p-4 mb-4 ${
+            analysis.coherenceIndex.score >= 80
+              ? 'bg-teal-50 border border-teal-200'
+              : analysis.coherenceIndex.score >= 50
+              ? 'bg-amber-50 border border-amber-200'
+              : 'bg-rose-50 border border-rose-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-600">Coherence Index</p>
+                <p className={`text-3xl font-bold ${
+                  analysis.coherenceIndex.score >= 80
+                    ? 'text-teal-700'
+                    : analysis.coherenceIndex.score >= 50
+                    ? 'text-amber-700'
+                    : 'text-rose-700'
+                }`}>
+                  {analysis.coherenceIndex.score}%
+                </p>
+              </div>
+              <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                analysis.coherenceIndex.score >= 80
+                  ? 'bg-teal-100 text-teal-800'
+                  : analysis.coherenceIndex.score >= 50
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-rose-100 text-rose-800'
+              }`}>
+                {analysis.coherenceIndex.verdict}
+              </div>
+            </div>
+          </div>
+
+          {/* Quadrant Distribution */}
+          <div className="mb-4">
+            <p className="text-sm font-medium text-slate-700 mb-2">Goal Classification Matrix</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-teal-50 border border-teal-200 rounded p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-teal-700">Strategic Drivers</span>
+                  <span className="text-lg font-bold text-teal-800">
+                    {analysis.coherenceIndex.quadrantDistribution['Strategic Driver']}
+                  </span>
+                </div>
+                <p className="text-xs text-teal-600 mt-1">Aligned + Outcome (100 pts)</p>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-amber-700">Busy Work Traps</span>
+                  <span className="text-lg font-bold text-amber-800">
+                    {analysis.coherenceIndex.quadrantDistribution['Busy Work Trap']}
+                  </span>
+                </div>
+                <p className="text-xs text-amber-600 mt-1">Aligned + Output (50 pts)</p>
+              </div>
+              <div className="bg-orange-50 border border-orange-200 rounded p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-orange-700">Rogue Projects</span>
+                  <span className="text-lg font-bold text-orange-800">
+                    {analysis.coherenceIndex.quadrantDistribution['Rogue Project']}
+                  </span>
+                </div>
+                <p className="text-xs text-orange-600 mt-1">Misaligned + Outcome (25 pts)</p>
+              </div>
+              <div className="bg-slate-100 border border-slate-200 rounded p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-700">Distractions</span>
+                  <span className="text-lg font-bold text-slate-800">
+                    {analysis.coherenceIndex.quadrantDistribution['Distraction']}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Misaligned + Output (0 pts)</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Pillar Coverage */}
+          {analysis.coherenceIndex.pillarCoverage && (
+            <div className="mb-4">
+              <p className="text-sm font-medium text-slate-700 mb-2">
+                Strategic Pillar Coverage: {analysis.coherenceIndex.pillarCoverage.coveragePercentage}%
+              </p>
+              {analysis.coherenceIndex.pillarCoverage.uncoveredPillars.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded p-3">
+                  <p className="text-sm font-medium text-amber-800">Under-Supported Pillars:</p>
+                  <p className="text-sm text-amber-700 mt-1">
+                    {analysis.coherenceIndex.pillarCoverage.uncoveredPillars.join(', ')}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Strategic Narrative */}
+      {analysis.strategicNarrative && (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            Strategic Analysis Narrative
+          </h3>
+          <div className="space-y-4">
+            {/* Alignment Section */}
+            <div className="border-l-4 border-blue-500 pl-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">Alignment Analysis</h4>
+              <p className="text-sm text-slate-600 whitespace-pre-line">
+                {analysis.strategicNarrative.alignmentNarrative}
+              </p>
+            </div>
+
+            {/* Rigor Section */}
+            <div className="border-l-4 border-purple-500 pl-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">Rigor Analysis</h4>
+              <p className="text-sm text-slate-600 whitespace-pre-line">
+                {analysis.strategicNarrative.rigorNarrative}
+              </p>
+            </div>
+
+            {/* Orphan Check */}
+            <div className="border-l-4 border-orange-500 pl-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">Strategic Coverage Check</h4>
+              <p className="text-sm text-slate-600 whitespace-pre-line">
+                {analysis.strategicNarrative.orphanCheck}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Individual Goals */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">
@@ -158,6 +294,7 @@ export function DocumentScorecard() {
         <div className="space-y-4">
           {analysis.goals.map((goal) => {
             const goalTier = calculateTier(goal.alignmentScore, goal.impactScore);
+            const quadrant = goal.quadrantClassification;
             return (
               <div
                 key={goal.goalId}
@@ -173,8 +310,23 @@ export function DocumentScorecard() {
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <span className="text-xs font-mono text-slate-500">{goal.goalId}</span>
-                    <p className="text-sm font-medium text-slate-900 mt-1">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <span className="text-xs font-mono text-slate-500">{goal.goalId}</span>
+                      {quadrant && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          quadrant.quadrant === 'Strategic Driver'
+                            ? 'bg-teal-100 text-teal-700'
+                            : quadrant.quadrant === 'Busy Work Trap'
+                            ? 'bg-amber-100 text-amber-700'
+                            : quadrant.quadrant === 'Rogue Project'
+                            ? 'bg-orange-100 text-orange-700'
+                            : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {quadrant.quadrant} ({quadrant.points} pts)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-slate-900">
                       {goal.goalText}
                     </p>
                   </div>
@@ -190,6 +342,32 @@ export function DocumentScorecard() {
                   </div>
                 </div>
 
+                {/* Quadrant Details */}
+                {quadrant && (
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    <span className={`px-2 py-1 rounded ${
+                      quadrant.rigorCheck.isOutcome
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {quadrant.rigorCheck.isOutcome ? '✓ Outcome' : '○ Output'}
+                      {quadrant.rigorCheck.verbDetected && ` (${quadrant.rigorCheck.verbDetected})`}
+                    </span>
+                    <span className={`px-2 py-1 rounded ${
+                      quadrant.alignmentCheck.isAligned
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {quadrant.alignmentCheck.isAligned ? '✓ Aligned' : '○ Misaligned'}
+                    </span>
+                    {quadrant.alignmentCheck.alignedThemes.length > 0 && (
+                      <span className="px-2 py-1 rounded bg-purple-100 text-purple-700">
+                        Themes: {quadrant.alignmentCheck.alignedThemes.join(', ')}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <div className="mt-3 space-y-2 text-sm">
                   <div>
                     <span className="text-slate-500">Linked Objectives: </span>
@@ -201,6 +379,55 @@ export function DocumentScorecard() {
                     <span className="text-slate-500">Alignment: </span>
                     <span className="text-slate-700">{goal.alignmentRationale}</span>
                   </div>
+
+                  {/* Score Breakdown */}
+                  {goal.alignmentScoreBreakdown && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-blue-600 hover:text-blue-700 text-xs font-medium">
+                        View Score Breakdown
+                      </summary>
+                      <div className="mt-2 bg-slate-100 rounded p-3 space-y-1 text-xs">
+                        <div className="flex justify-between">
+                          <span>Objective Mapping (40%)</span>
+                          <span className="font-medium">{goal.alignmentScoreBreakdown.objectiveMappingScore}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Vision/Mission (30%)</span>
+                          <span className="font-medium">{goal.alignmentScoreBreakdown.visionMissionScore}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Theme Alignment (20%)</span>
+                          <span className="font-medium">{goal.alignmentScoreBreakdown.themeAlignmentScore}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Role Fit (10%)</span>
+                          <span className="font-medium">{goal.alignmentScoreBreakdown.roleAppropriatenessScore}</span>
+                        </div>
+                      </div>
+                    </details>
+                  )}
+
+                  {/* Strategic Tie-Back */}
+                  {goal.strategicTieBack && goal.strategicTieBack.visionConnection && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-blue-600 hover:text-blue-700 text-xs font-medium">
+                        View Strategy Tie-Back
+                      </summary>
+                      <div className="mt-2 bg-blue-50 rounded p-3 space-y-2 text-xs">
+                        <div>
+                          <span className="font-medium text-blue-800">Vision Connection: </span>
+                          <span className="text-blue-700">{goal.strategicTieBack.visionConnection}</span>
+                        </div>
+                        {goal.strategicTieBack.strategicThemes.length > 0 && (
+                          <div>
+                            <span className="font-medium text-blue-800">Strategic Themes: </span>
+                            <span className="text-blue-700">{goal.strategicTieBack.strategicThemes.join(', ')}</span>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  )}
+
                   {goal.gaps.length > 0 && (
                     <div className="bg-amber-50 text-amber-800 px-3 py-2 rounded">
                       <span className="font-medium">Gaps: </span>
