@@ -92,10 +92,14 @@ class AlignmentAnalyzer:
         if not document_text:
             raise ValueError("Goal document must contain extractedText")
 
-        # Use Claude to analyze alignment
+        # Extract employee context if available (from goals table upload)
+        employee_context = self._extract_employee_context(goal_document)
+
+        # Use Claude to analyze alignment with employee context
         raw_analysis = self.client.analyze_goal_alignment(
             self.framework,
-            document_text
+            document_text,
+            employee_context=employee_context
         )
 
         # Validate and enhance analysis
@@ -114,7 +118,76 @@ class AlignmentAnalyzer:
             'frameworkId': self.framework.get('metadata', {}).get('frameworkId', 'unknown')
         }
 
+        # Preserve employee metadata in analysis
+        if employee_context:
+            analysis['employeeContext'] = employee_context
+
         return analysis
+
+    def _extract_employee_context(self, goal_document: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Extract employee context from goal document metadata.
+
+        Args:
+            goal_document: Processed goal document
+
+        Returns:
+            Employee context dictionary or None
+        """
+        # Check for employeeMetadata (from goals table upload)
+        emp_meta = goal_document.get('employeeMetadata', {})
+        doc_meta = goal_document.get('metadata', {})
+
+        # Try to extract employee info from various possible locations
+        employee_name = emp_meta.get('employeeName') or doc_meta.get('employeeName')
+        job_title = emp_meta.get('jobTitle') or doc_meta.get('jobTitle')
+        department = emp_meta.get('department') or doc_meta.get('department')
+        seniority_level = emp_meta.get('seniorityLevel') or doc_meta.get('seniorityLevel')
+
+        # If no employee context available, return None
+        if not any([employee_name, job_title, department, seniority_level]):
+            return None
+
+        # Build context
+        context = {
+            'employeeName': employee_name or 'Unknown',
+            'jobTitle': job_title,
+            'department': department,
+            'seniorityLevel': seniority_level
+        }
+
+        # Extract goals with weights if available from structured sections
+        goals_with_weights = []
+        structured = goal_document.get('structuredSections', [])
+        for section in structured:
+            if section.get('heading', '').lower() == 'goals':
+                # Parse goals from content (format from goals_table_processor)
+                content = section.get('content', '')
+                for line in content.split('\n'):
+                    if line.strip().startswith('Goal'):
+                        # Extract goal text and weight if present
+                        goal_info = {'goalText': line.strip()}
+                        if 'Weight:' in content:
+                            # Try to find weight on nearby line
+                            pass  # Weight parsing handled below
+                        goals_with_weights.append(goal_info)
+
+        # Also check raw goals data if from goals_table_processor
+        raw_goals = goal_document.get('goals', [])
+        if raw_goals:
+            goals_with_weights = []
+            for goal in raw_goals:
+                if isinstance(goal, dict):
+                    goals_with_weights.append({
+                        'goalText': goal.get('goalText', ''),
+                        'weight': goal.get('weight', ''),
+                        'category': goal.get('category', '')
+                    })
+
+        if goals_with_weights:
+            context['goalsWithWeights'] = goals_with_weights
+
+        return context
 
     def analyze_batch(self, goal_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -165,6 +238,13 @@ class AlignmentAnalyzer:
         analysis['overallImpactScore'] = self._clamp_score(
             analysis.get('overallImpactScore', 50)
         )
+        analysis['overallCoherenceScore'] = self._clamp_score(
+            analysis.get('overallCoherenceScore', 50)
+        )
+
+        # Ensure role appropriateness assessment
+        if 'roleAppropriatenessAssessment' not in analysis:
+            analysis['roleAppropriatenessAssessment'] = ''
 
         # Ensure goals array
         if 'goals' not in analysis:
@@ -179,7 +259,28 @@ class AlignmentAnalyzer:
             goal['alignedObjectives'] = goal.get('alignedObjectives', [])
             goal['alignmentRationale'] = goal.get('alignmentRationale', '')
             goal['impactRationale'] = goal.get('impactRationale', '')
+            goal['roleAppropriateness'] = goal.get('roleAppropriateness', '')
             goal['gaps'] = goal.get('gaps', [])
+
+            # Ensure SMART assessment
+            if 'smartAssessment' not in goal:
+                goal['smartAssessment'] = {
+                    'specific': True,
+                    'measurable': True,
+                    'achievable': True,
+                    'relevant': True,
+                    'timeBound': True,
+                    'notes': ''
+                }
+
+        # Ensure goal set coherence
+        if 'goalSetCoherence' not in analysis:
+            analysis['goalSetCoherence'] = {
+                'internalConsistency': '',
+                'balancedCoverage': '',
+                'weightDistributionAssessment': '',
+                'overallCoherenceNotes': ''
+            }
 
         # Ensure recommendations
         if 'recommendations' not in analysis:
@@ -438,6 +539,7 @@ class AlignmentAnalyzer:
 class MockAlignmentClient:
     """
     Mock client for testing alignment analysis without API calls.
+    Generates role-contextualized rationales based on employee metadata.
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -446,25 +548,49 @@ class MockAlignmentClient:
     def analyze_goal_alignment(
         self,
         strategic_framework: Dict[str, Any],
-        goal_document_text: str
+        goal_document_text: str,
+        employee_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Return mock alignment analysis."""
+        """Return mock alignment analysis with role-contextualized rationales."""
+        # Extract employee info for contextualized rationales
+        emp_name = "the employee"
+        job_title = "team member"
+        seniority = "mid"
+        department = "the organization"
+
+        if employee_context:
+            emp_name = employee_context.get('employeeName', emp_name)
+            job_title = employee_context.get('jobTitle') or job_title
+            seniority = employee_context.get('seniorityLevel') or seniority
+            department = employee_context.get('department') or department
+
         # Detect goals from text (simple parsing)
-        goals = self._parse_goals(goal_document_text)
+        goals = self._parse_goals(goal_document_text, job_title, seniority, department)
+
+        # Generate role-appropriate assessment
+        role_assessment = self._generate_role_assessment(job_title, seniority, len(goals))
+
+        # Generate coherence assessment
+        coherence = self._generate_coherence_assessment(goals, seniority)
 
         return {
             "overallAlignmentScore": 72,
             "overallImpactScore": 68,
+            "overallCoherenceScore": 70,
+            "roleAppropriatenessAssessment": role_assessment,
             "goals": goals,
-            "recommendations": [
-                "Add goals addressing customer perspective objectives",
-                "Strengthen linkage to sustainability initiatives",
-                "Include more measurable targets for learning objectives"
-            ]
+            "goalSetCoherence": coherence,
+            "recommendations": self._generate_recommendations(job_title, seniority, department)
         }
 
-    def _parse_goals(self, text: str) -> List[Dict[str, Any]]:
-        """Simple goal detection from text."""
+    def _parse_goals(
+        self,
+        text: str,
+        job_title: str,
+        seniority: str,
+        department: str
+    ) -> List[Dict[str, Any]]:
+        """Parse goals and generate role-contextualized rationales."""
         goals = []
         lines = text.split('\n')
 
@@ -482,33 +608,259 @@ class MockAlignmentClient:
 
                 if len(line) > 20:  # Substantial text
                     goal_num += 1
-                    goals.append({
-                        "goalId": f"G{goal_num}",
-                        "goalText": line.strip()[:200],
-                        "alignmentScore": 70 + (goal_num % 20),
-                        "impactScore": 65 + (goal_num % 25),
-                        "alignedObjectives": self._assign_mock_objectives(goal_num),
-                        "alignmentRationale": "Goal supports operational efficiency and process improvement",
-                        "impactRationale": "Direct contribution to cost reduction targets",
-                        "gaps": ["No direct link to customer satisfaction metrics"] if goal_num % 2 == 0 else []
-                    })
+                    goals.append(self._create_goal_analysis(
+                        goal_num, line.strip()[:200], job_title, seniority, department
+                    ))
 
         # Ensure at least some goals
         if not goals:
-            goals = [
-                {
-                    "goalId": "G1",
-                    "goalText": "Process improvement goal",
-                    "alignmentScore": 75,
-                    "impactScore": 70,
-                    "alignedObjectives": ["P1", "P3"],
-                    "alignmentRationale": "Supports operational efficiency",
-                    "impactRationale": "Direct contribution to cost targets",
-                    "gaps": []
-                }
-            ]
+            goals = [self._create_goal_analysis(1, "Process improvement goal", job_title, seniority, department)]
 
         return goals
+
+    def _create_goal_analysis(
+        self,
+        goal_num: int,
+        goal_text: str,
+        job_title: str,
+        seniority: str,
+        department: str
+    ) -> Dict[str, Any]:
+        """Create a goal analysis with role-contextualized rationales."""
+        aligned_objectives = self._assign_mock_objectives(goal_num)
+        alignment_score = 70 + (goal_num % 20)
+        impact_score = 65 + (goal_num % 25)
+
+        # Generate role-specific alignment rationale
+        alignment_rationale = self._generate_alignment_rationale(
+            goal_text, job_title, seniority, department, aligned_objectives
+        )
+
+        # Generate role-specific impact rationale
+        impact_rationale = self._generate_impact_rationale(
+            goal_text, job_title, seniority, department
+        )
+
+        # Generate role appropriateness assessment
+        role_appropriateness = self._generate_role_appropriateness(
+            goal_text, job_title, seniority
+        )
+
+        # Generate SMART assessment
+        smart = self._assess_smart(goal_text)
+
+        return {
+            "goalId": f"G{goal_num}",
+            "goalText": goal_text,
+            "alignmentScore": alignment_score,
+            "impactScore": impact_score,
+            "alignedObjectives": aligned_objectives,
+            "alignmentRationale": alignment_rationale,
+            "impactRationale": impact_rationale,
+            "roleAppropriateness": role_appropriateness,
+            "gaps": self._identify_gaps(goal_num, seniority),
+            "smartAssessment": smart
+        }
+
+    def _generate_alignment_rationale(
+        self,
+        goal_text: str,
+        job_title: str,
+        seniority: str,
+        department: str,
+        aligned_objectives: List[str]
+    ) -> str:
+        """Generate role-contextualized alignment rationale."""
+        obj_str = ", ".join(aligned_objectives)
+
+        if seniority == 'executive':
+            return (
+                f"As a {job_title}, this goal demonstrates enterprise-level strategic thinking by "
+                f"directly enabling objectives {obj_str}. The scope and ambition are appropriate for "
+                f"an executive role, focusing on outcomes that cascade throughout {department}. "
+                f"This goal shows strong translation of organizational vision into leadership action."
+            )
+        elif seniority == 'senior':
+            return (
+                f"This goal effectively bridges strategic intent to operational execution, which is "
+                f"appropriate for a {job_title} at the senior level. It connects to objectives {obj_str} "
+                f"by translating organizational priorities into actionable team initiatives within {department}. "
+                f"The goal shows understanding of how to operationalize strategy."
+            )
+        elif seniority == 'junior':
+            return (
+                f"For a {job_title} at an early career stage, this goal appropriately focuses on "
+                f"foundational contributions that support objectives {obj_str}. It demonstrates emerging "
+                f"understanding of how individual work connects to {department}'s strategic priorities, "
+                f"though the linkage could be more explicitly articulated."
+            )
+        else:  # mid-level
+            return (
+                f"As a {job_title}, this goal reflects solid understanding of how functional work "
+                f"contributes to organizational strategy. It supports objectives {obj_str} through "
+                f"team-level execution in {department}. The goal appropriately balances individual "
+                f"contribution with awareness of broader strategic context."
+            )
+
+    def _generate_impact_rationale(
+        self,
+        goal_text: str,
+        job_title: str,
+        seniority: str,
+        department: str
+    ) -> str:
+        """Generate role-contextualized impact rationale."""
+        if seniority == 'executive':
+            return (
+                f"Given the {job_title} role's span of influence, successful achievement would have "
+                f"significant strategic leverage, potentially enabling multiple downstream objectives "
+                f"and setting direction for {department}. Impact extends beyond direct outcomes to "
+                f"organizational capability building."
+            )
+        elif seniority == 'senior':
+            return (
+                f"As a {job_title}, successful execution would demonstrate leadership in {department} "
+                f"and create enabling conditions for team success. The impact multiplier comes from "
+                f"both direct contribution and influence on others' effectiveness."
+            )
+        elif seniority == 'junior':
+            return (
+                f"For a {job_title}, this goal's impact is appropriately scoped to direct individual "
+                f"contribution within {department}. Success builds foundational capabilities and "
+                f"demonstrates readiness for increased responsibility."
+            )
+        else:
+            return (
+                f"The {job_title} role positions this goal for meaningful functional impact within "
+                f"{department}. Success would contribute directly to team objectives while demonstrating "
+                f"the ability to execute on strategic priorities."
+            )
+
+    def _generate_role_appropriateness(
+        self,
+        goal_text: str,
+        job_title: str,
+        seniority: str
+    ) -> str:
+        """Assess if goal is appropriate for the role/level."""
+        if seniority == 'executive':
+            return (
+                f"The goal's scope is generally appropriate for an executive {job_title} role, "
+                f"focusing on strategic outcomes rather than tactical activities. Consider ensuring "
+                f"the goal emphasizes enterprise impact and leadership enablement."
+            )
+        elif seniority == 'senior':
+            return (
+                f"This goal is well-suited for a senior {job_title}, appropriately balancing "
+                f"strategic alignment with operational leadership. The scope reflects expected "
+                f"influence over team and cross-functional outcomes."
+            )
+        elif seniority == 'junior':
+            return (
+                f"For a {job_title} at the junior level, this goal is appropriately focused on "
+                f"skill development and direct contribution. The scope is achievable while "
+                f"providing meaningful learning opportunities."
+            )
+        else:
+            return (
+                f"The goal's scope and complexity are appropriate for a mid-level {job_title}, "
+                f"requiring both individual expertise and collaborative execution."
+            )
+
+    def _generate_role_assessment(self, job_title: str, seniority: str, goal_count: int) -> str:
+        """Generate overall role appropriateness assessment."""
+        if seniority == 'executive':
+            return (
+                f"As a {job_title} at the executive level, the goal set shows appropriate strategic focus. "
+                f"The {goal_count} goals generally reflect enterprise-level thinking, though some could "
+                f"be elevated to focus more on enabling organizational capabilities rather than direct execution. "
+                f"Executive goals should cascade to enable others' success."
+            )
+        elif seniority == 'senior':
+            return (
+                f"The goal set for this {job_title} (senior level) appropriately bridges strategy and execution. "
+                f"The {goal_count} goals show good balance between leadership responsibilities and operational "
+                f"impact. Consider strengthening cross-functional collaboration elements."
+            )
+        elif seniority == 'junior':
+            return (
+                f"For a {job_title} at the junior level, this goal set appropriately emphasizes skill building "
+                f"and direct contribution. The {goal_count} goals are achievable and provide clear success criteria. "
+                f"Consider adding goals that demonstrate understanding of broader organizational context."
+            )
+        else:
+            return (
+                f"This {job_title} (mid-level) has a goal set that balances individual contribution with team impact. "
+                f"The {goal_count} goals show solid understanding of functional responsibilities. Consider adding "
+                f"stretch goals that demonstrate readiness for advancement."
+            )
+
+    def _generate_coherence_assessment(
+        self,
+        goals: List[Dict[str, Any]],
+        seniority: str
+    ) -> Dict[str, str]:
+        """Generate goal set coherence assessment."""
+        goal_count = len(goals)
+
+        return {
+            "internalConsistency": (
+                f"The {goal_count} goals are generally complementary, with process-focused goals supporting "
+                f"outcome-oriented objectives. No significant conflicts identified, though some goals "
+                f"could be more explicitly linked to show interdependencies."
+            ),
+            "balancedCoverage": (
+                "The goal set shows strong coverage of internal process objectives but could benefit from "
+                "additional focus on customer-facing and learning/growth perspectives. Consider adding goals "
+                "that address capability development and stakeholder value creation."
+            ),
+            "weightDistributionAssessment": (
+                "If weights are assigned, verify that strategic priorities (customer satisfaction, "
+                "operational excellence) receive appropriate emphasis. Current distribution appears "
+                "reasonable but should align with organizational strategic emphasis areas."
+            ),
+            "overallCoherenceNotes": (
+                f"Overall, this goal set tells a coherent story of contribution at the {seniority} level. "
+                f"The goals work together to demonstrate both individual expertise and organizational awareness. "
+                f"Strengthening explicit linkages between goals would improve the strategic narrative."
+            )
+        }
+
+    def _generate_recommendations(
+        self,
+        job_title: str,
+        seniority: str,
+        department: str
+    ) -> List[str]:
+        """Generate role-specific recommendations."""
+        base_recommendations = [
+            f"Add goals addressing customer perspective objectives relevant to {department}",
+            "Strengthen linkage to sustainability and ESG initiatives",
+            "Include more measurable targets with specific timelines"
+        ]
+
+        if seniority == 'executive':
+            base_recommendations.extend([
+                "Consider adding goals focused on organizational capability building",
+                "Include goals that enable and cascade to leadership team success"
+            ])
+        elif seniority == 'senior':
+            base_recommendations.extend([
+                f"Add cross-functional collaboration goals within {department}",
+                "Consider goals that develop team members' capabilities"
+            ])
+        elif seniority == 'junior':
+            base_recommendations.extend([
+                "Add goals focused on skill development in strategic areas",
+                f"Consider stretch goals that demonstrate readiness for growth in {department}"
+            ])
+        else:
+            base_recommendations.extend([
+                "Add goals demonstrating cross-functional impact",
+                "Consider including innovation or improvement-focused goals"
+            ])
+
+        return base_recommendations[:5]  # Return top 5
 
     def _assign_mock_objectives(self, goal_num: int) -> List[str]:
         """Assign mock objective alignments."""
@@ -520,6 +872,39 @@ class MockAlignmentClient:
             ["L1", "L2"]
         ]
         return objectives_pool[goal_num % len(objectives_pool)]
+
+    def _identify_gaps(self, goal_num: int, seniority: str) -> List[str]:
+        """Identify gaps based on goal and seniority."""
+        if goal_num % 2 == 0:
+            if seniority == 'executive':
+                return ["No explicit linkage to shareholder value metrics"]
+            elif seniority == 'senior':
+                return ["Could strengthen connection to team development outcomes"]
+            else:
+                return ["No direct link to customer satisfaction metrics"]
+        return []
+
+    def _assess_smart(self, goal_text: str) -> Dict[str, Any]:
+        """Assess SMART criteria for a goal."""
+        text_lower = goal_text.lower()
+
+        has_number = any(char.isdigit() for char in goal_text)
+        has_timeframe = any(word in text_lower for word in ['by', 'within', 'q1', 'q2', 'q3', 'q4', 'year', 'month'])
+        has_action = any(word in text_lower for word in ['reduce', 'improve', 'increase', 'achieve', 'complete', 'implement'])
+
+        return {
+            "specific": has_action,
+            "measurable": has_number,
+            "achievable": True,  # Assume achievable without more context
+            "relevant": True,  # Assume relevant since it's in goals
+            "timeBound": has_timeframe,
+            "notes": (
+                "Goal could be strengthened by adding " +
+                ("specific metrics, " if not has_number else "") +
+                ("clear timelines, " if not has_timeframe else "") +
+                ("action-oriented language" if not has_action else "")
+            ).rstrip(", ") or "Goal meets SMART criteria well"
+        }
 
     def test_connection(self) -> bool:
         return True
