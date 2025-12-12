@@ -11,7 +11,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Body
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from processors import DocumentProcessor
+from processors import DocumentProcessor, GoalsTableProcessor
 from analyzers import (
     StrategySynthesizer,
     AlignmentAnalyzer,
@@ -118,6 +118,70 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/upload/goals-table")
+async def upload_goals_table(
+    file: UploadFile = File(...)
+):
+    """
+    Upload a CSV or Excel file containing employee goals from HR systems.
+    The file should contain columns for employee name, goals, and optionally
+    job title, department, and seniority level.
+    """
+    # Validate file extension
+    allowed_extensions = ['.csv', '.xlsx', '.xls']
+    file_ext = os.path.splitext(file.filename or '')[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file_ext}. Please upload CSV or Excel (.xlsx, .xls)"
+        )
+
+    try:
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # Process goals table
+        processor = GoalsTableProcessor()
+        processed_data = processor.process(tmp_path)
+
+        # Convert to goal documents
+        goal_documents = processor.to_goal_documents(processed_data)
+
+        # Store all employee goal documents
+        for doc in goal_documents:
+            document_store[doc['documentId']] = doc
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        return {
+            "success": True,
+            "fileName": file.filename,
+            "employeeCount": processed_data['employeeCount'],
+            "totalGoals": sum(emp.get('goalCount', 0) for emp in processed_data['employees']),
+            "columnMapping": processed_data['columnMapping'],
+            "employees": [
+                {
+                    "documentId": doc['documentId'],
+                    "employeeName": doc['employeeMetadata'].get('employeeName'),
+                    "jobTitle": doc['employeeMetadata'].get('jobTitle'),
+                    "department": doc['employeeMetadata'].get('department'),
+                    "seniorityLevel": doc['employeeMetadata'].get('seniorityLevel'),
+                    "goalCount": doc['metadata'].get('goalCount', 0)
+                }
+                for doc in goal_documents
+            ]
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/documents")
 async def list_documents():
     """List all uploaded documents."""
@@ -128,6 +192,7 @@ async def list_documents():
                 "fileName": doc['fileName'],
                 "documentType": doc['documentType'],
                 "wordCount": doc['metadata']['wordCount'],
+                "employeeName": doc.get('employeeMetadata', {}).get('employeeName'),
             }
             for doc in document_store.values()
         ]

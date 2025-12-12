@@ -1,6 +1,7 @@
 import { AnalysisProvider, useAnalysis } from './contexts/AnalysisContext';
 import { APIKeyPanel } from './components/APIKeyPanel';
 import { DocumentUploader } from './components/DocumentUploader';
+import { GoalsTableUploader } from './components/GoalsTableUploader';
 import { AnalysisProgress } from './components/AnalysisProgress';
 import { StrategicFrameworkView } from './components/StrategicFrameworkView';
 import { AlignmentDashboard } from './components/AlignmentDashboard';
@@ -56,14 +57,7 @@ function AppContent() {
             description="Upload your organizational vision, mission, and strategy documents (PDF, DOCX, PPTX, XLSX)"
           />
         )}
-        {currentStep === 'uploadGoals' && (
-          <DocumentUploader
-            category="goals"
-            maxFiles={15}
-            title="Upload Goal Documents"
-            description="Upload employee performance goal documents for alignment analysis"
-          />
-        )}
+        {currentStep === 'uploadGoals' && <GoalsTableUploader />}
         {currentStep === 'processing' && <AnalysisProgress />}
         {currentStep === 'framework' && <StrategicFrameworkView />}
         {currentStep === 'dashboard' && <AlignmentDashboard />}
