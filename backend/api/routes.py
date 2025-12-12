@@ -70,54 +70,6 @@ async def test_connection(request: APIKeyRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/upload/{document_type}")
-async def upload_document(
-    document_type: str,
-    file: UploadFile = File(...)
-):
-    """Upload and process a document."""
-    if document_type not in ['strategy', 'goals']:
-        raise HTTPException(status_code=400, detail="Invalid document type")
-
-    # Validate file extension
-    allowed_extensions = ['.pdf', '.docx', '.pptx', '.xlsx']
-    file_ext = os.path.splitext(file.filename or '')[1].lower()
-    if file_ext not in allowed_extensions:
-        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}")
-
-    try:
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        # Process document
-        processor = DocumentProcessor()
-        result = processor.extract(tmp_path, document_type=document_type)
-
-        # Update filename
-        result['fileName'] = file.filename
-
-        # Store in memory
-        document_store[result['documentId']] = result
-
-        # Clean up temp file
-        os.unlink(tmp_path)
-
-        return {
-            "documentId": result['documentId'],
-            "fileName": result['fileName'],
-            "documentType": result['documentType'],
-            "wordCount": result['metadata']['wordCount'],
-            "pageCount": result['metadata'].get('pageCount', 1),
-            "sections": len(result['structuredSections']),
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.post("/upload/goals-table")
 async def upload_goals_table(
     file: UploadFile = File(...)
@@ -178,6 +130,54 @@ async def upload_goals_table(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload/{document_type}")
+async def upload_document(
+    document_type: str,
+    file: UploadFile = File(...)
+):
+    """Upload and process a document."""
+    if document_type not in ['strategy', 'goals']:
+        raise HTTPException(status_code=400, detail="Invalid document type")
+
+    # Validate file extension
+    allowed_extensions = ['.pdf', '.docx', '.pptx', '.xlsx']
+    file_ext = os.path.splitext(file.filename or '')[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}")
+
+    try:
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        # Process document
+        processor = DocumentProcessor()
+        result = processor.extract(tmp_path, document_type=document_type)
+
+        # Update filename
+        result['fileName'] = file.filename
+
+        # Store in memory
+        document_store[result['documentId']] = result
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        return {
+            "documentId": result['documentId'],
+            "fileName": result['fileName'],
+            "documentType": result['documentType'],
+            "wordCount": result['metadata']['wordCount'],
+            "pageCount": result['metadata'].get('pageCount', 1),
+            "sections": len(result['structuredSections']),
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
