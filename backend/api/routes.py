@@ -106,8 +106,17 @@ async def upload_goals_table(
         for doc in goal_documents:
             document_store[doc['documentId']] = doc
 
-        # Clean up temp file
-        os.unlink(tmp_path)
+        # Clean up temp file (with retry for Windows file locking)
+        try:
+            os.unlink(tmp_path)
+        except PermissionError:
+            # On Windows, file may still be locked - schedule for cleanup later
+            import gc
+            gc.collect()  # Force garbage collection to release file handles
+            try:
+                os.unlink(tmp_path)
+            except PermissionError:
+                pass  # File will be cleaned up by OS temp cleanup
 
         return {
             "success": True,

@@ -138,19 +138,19 @@ class GoalsTableProcessor:
 
             elif lower_path.endswith(('.xlsx', '.xls')):
                 # Read first sheet by default, or sheet named 'Goals' if exists
-                xlsx = self.pd.ExcelFile(file_path)
+                # Use context manager to ensure file handle is closed (important for Windows)
+                with self.pd.ExcelFile(file_path) as xlsx:
+                    # Look for a goals-related sheet
+                    goal_sheet = None
+                    for sheet in xlsx.sheet_names:
+                        if 'goal' in sheet.lower() or 'objective' in sheet.lower():
+                            goal_sheet = sheet
+                            break
 
-                # Look for a goals-related sheet
-                goal_sheet = None
-                for sheet in xlsx.sheet_names:
-                    if 'goal' in sheet.lower() or 'objective' in sheet.lower():
-                        goal_sheet = sheet
-                        break
-
-                if goal_sheet:
-                    return self.pd.read_excel(xlsx, sheet_name=goal_sheet)
-                else:
-                    return self.pd.read_excel(xlsx, sheet_name=0)
+                    if goal_sheet:
+                        return self.pd.read_excel(xlsx, sheet_name=goal_sheet)
+                    else:
+                        return self.pd.read_excel(xlsx, sheet_name=0)
 
             else:
                 raise ValueError(f"Unsupported file type. Use CSV or Excel (.xlsx, .xls)")
