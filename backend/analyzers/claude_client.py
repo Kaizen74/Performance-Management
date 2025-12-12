@@ -313,11 +313,57 @@ ANALYSIS REQUIREMENTS:
    - Leverage potential (does this goal enable others' success?)
    - Timeline alignment with strategic planning horizons
 
-SCORING CRITERIA:
-- Alignment Score (0-100): How well goals translate THIS SPECIFIC strategy for this role
-- Impact Score (0-100): Potential strategic contribution given role scope
-- Coherence Score (0-100): How well the goal SET works together
-- Strategy Coherence Score (0-100): Confidence that goals belong to this strategy context
+SCORING CRITERIA (CRITICAL - SCORES MUST REFLECT STRATEGY TIE-BACK):
+
+The alignment score is the PRIMARY measure of how well an employee's goals connect to THIS SPECIFIC organizational strategy.
+Calculate scores using the following weighted components:
+
+FOR EACH GOAL'S ALIGNMENT SCORE (0-100):
+1. Strategic Objective Mapping (40% weight):
+   - Does the goal directly map to specific strategic objectives (F1, C2, P3, etc.)?
+   - 100: Clear, direct mapping to 2+ objectives with explicit linkage
+   - 70: Maps to 1 objective with reasonable connection
+   - 40: Weak/indirect connection to objectives
+   - 10: No discernible connection to any strategic objective
+
+2. Vision/Mission Connection (30% weight):
+   - Does the goal actively advance the stated vision and mission?
+   - 100: Goal directly quotes or explicitly references vision/mission elements
+   - 70: Goal clearly supports vision/mission without explicit reference
+   - 40: Tangential relationship to vision/mission
+   - 10: Goal appears disconnected from vision/mission
+
+3. Strategic Theme Alignment (20% weight):
+   - Does the goal address identified strategic themes?
+   - 100: Directly addresses a named strategic theme
+   - 50: Partially related to strategic themes
+   - 10: Does not address any strategic themes
+
+4. Role-Appropriate Translation (10% weight):
+   - Is this goal an appropriate translation of strategy for this employee's level?
+   - 100: Perfect translation for role/seniority
+   - 50: Acceptable but could be better scoped
+   - 10: Mismatched scope for role
+
+FOR OVERALL ALIGNMENT SCORE:
+- If Strategy Coherence Check < 50 (goals appear to be for wrong strategy): Cap overall score at 40
+- Otherwise: Weighted average of individual goal alignment scores, adjusted by:
+  - Strategic Theme Coverage Bonus: +5 if >50% of themes covered, +10 if >75%
+  - Strategic Theme Gap Penalty: -5 for each critical theme not addressed
+  - Coherence Bonus: +5 if goals form a coherent strategic narrative
+
+FOR IMPACT SCORE (0-100):
+- Based on: scope of influence, leverage potential, and strategic multiplier effect
+- Executives: Higher impact potential (can affect enterprise outcomes)
+- Senior: Moderate-high (can affect team/department outcomes)
+- Mid: Moderate (can affect functional outcomes)
+- Junior: Lower but appropriate (can affect individual/task outcomes)
+
+FOR COHERENCE SCORE (0-100):
+- Internal consistency of goal set (no conflicts)
+- Balanced coverage across BSC perspectives
+- Appropriate weight distribution if weights provided
+- Goals tell a unified strategic story
 
 Return ONLY valid JSON matching this structure:
 {{
@@ -343,6 +389,16 @@ Return ONLY valid JSON matching this structure:
             "goalId": "G1",
             "goalText": "string",
             "alignmentScore": 82,
+            "alignmentScoreBreakdown": {{
+                "objectiveMappingScore": 85,
+                "objectiveMappingRationale": "Maps to F1 (revenue growth) and P2 (process efficiency) with clear linkage",
+                "visionMissionScore": 80,
+                "visionMissionRationale": "Supports mission of 'delivering value to stakeholders' through efficiency gains",
+                "themeAlignmentScore": 75,
+                "themeAlignmentRationale": "Addresses 'Operational Excellence' theme directly",
+                "roleAppropriatenessScore": 90,
+                "roleAppropriatenessRationale": "Appropriate scope for mid-level role"
+            }},
             "impactScore": 70,
             "alignedObjectives": ["F1", "P2"],
             "strategicTieBack": {{

@@ -282,6 +282,18 @@ class AlignmentAnalyzer:
         if 'goals' not in analysis:
             analysis['goals'] = []
 
+        # Ensure overall alignment score breakdown
+        if 'overallAlignmentScoreBreakdown' not in analysis:
+            analysis['overallAlignmentScoreBreakdown'] = {
+                'averageGoalScore': analysis.get('overallAlignmentScore', 50),
+                'themeCoverageBonus': 0,
+                'themeGapPenalty': 0,
+                'coherenceBonus': 0,
+                'strategyMismatchPenalty': 0,
+                'themeCoveragePercentage': 0,
+                'strategyConfidence': 75
+            }
+
         for i, goal in enumerate(analysis['goals']):
             if 'goalId' not in goal:
                 goal['goalId'] = f"G{i+1}"
@@ -293,6 +305,20 @@ class AlignmentAnalyzer:
             goal['impactRationale'] = goal.get('impactRationale', '')
             goal['roleAppropriateness'] = goal.get('roleAppropriateness', '')
             goal['gaps'] = goal.get('gaps', [])
+
+            # Ensure per-goal alignment score breakdown
+            if 'alignmentScoreBreakdown' not in goal:
+                goal['alignmentScoreBreakdown'] = {
+                    'totalScore': goal['alignmentScore'],
+                    'objectiveMappingScore': 70,
+                    'objectiveMappingRationale': 'Maps to strategic objectives',
+                    'visionMissionScore': 70,
+                    'visionMissionRationale': 'Supports organizational vision and mission',
+                    'themeAlignmentScore': 60,
+                    'themeAlignmentRationale': 'Related to strategic themes',
+                    'roleAppropriatenessScore': 70,
+                    'roleAppropriatenessRationale': 'Appropriate for role level'
+                }
 
             # Ensure per-goal strategic tie-back
             if 'strategicTieBack' not in goal:
@@ -598,7 +624,7 @@ class MockAlignmentClient:
         goal_document_text: str,
         employee_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Return mock alignment analysis with role-contextualized rationales and strategy tie-back."""
+        """Return mock alignment analysis with strategy-tied scoring and role-contextualized rationales."""
         # Extract strategic content for explicit referencing
         org_purpose = strategic_framework.get('organizationalPurpose', {})
         self.vision = org_purpose.get('vision', 'To be an industry leader')
@@ -609,6 +635,9 @@ class MockAlignmentClient:
         self.theme_names = [t.get('name', '') for t in strategic_themes if t.get('name')]
         if not self.theme_names:
             self.theme_names = ['Operational Excellence', 'Customer Focus', 'Innovation']
+
+        # Extract strategic objectives for scoring
+        self.strategic_objectives = self._extract_objectives(strategic_framework)
 
         # Extract employee info for contextualized rationales
         emp_name = "the employee"
@@ -637,10 +666,16 @@ class MockAlignmentClient:
         # Generate strategic tie-back
         strategic_tie_back = self._generate_strategic_tie_back(goals, seniority)
 
+        # Calculate meaningful overall scores based on strategy tie-back
+        overall_scores = self._calculate_overall_scores(
+            goals, strategy_coherence, strategic_tie_back, seniority
+        )
+
         return {
-            "overallAlignmentScore": 72,
-            "overallImpactScore": 68,
-            "overallCoherenceScore": 70,
+            "overallAlignmentScore": overall_scores['alignment'],
+            "overallAlignmentScoreBreakdown": overall_scores['alignmentBreakdown'],
+            "overallImpactScore": overall_scores['impact'],
+            "overallCoherenceScore": overall_scores['coherence'],
             "strategyCoherenceCheck": strategy_coherence,
             "strategicTieBack": strategic_tie_back,
             "roleAppropriatenessAssessment": role_assessment,
@@ -648,6 +683,119 @@ class MockAlignmentClient:
             "goalSetCoherence": coherence,
             "recommendations": self._generate_recommendations(job_title, seniority, department)
         }
+
+    def _extract_objectives(self, framework: Dict[str, Any]) -> Dict[str, List[str]]:
+        """Extract strategic objectives from framework for scoring reference."""
+        objectives = {}
+        perspectives = framework.get('strategicPerspectives', {})
+
+        for p_name, p_data in perspectives.items():
+            obj_list = p_data.get('objectives', [])
+            for obj in obj_list:
+                obj_id = obj.get('id', '')
+                obj_text = obj.get('objective', '')
+                if obj_id:
+                    objectives[obj_id] = obj_text
+
+        return objectives
+
+    def _calculate_overall_scores(
+        self,
+        goals: List[Dict[str, Any]],
+        strategy_coherence: Dict[str, Any],
+        strategic_tie_back: Dict[str, Any],
+        seniority: str
+    ) -> Dict[str, Any]:
+        """Calculate meaningful overall scores based on strategy tie-back."""
+        if not goals:
+            return {
+                'alignment': 50,
+                'alignmentBreakdown': {
+                    'averageGoalScore': 50,
+                    'themeCoverageBonus': 0,
+                    'coherenceBonus': 0,
+                    'strategyMismatchPenalty': 0
+                },
+                'impact': 50,
+                'coherence': 50
+            }
+
+        # Calculate average of individual goal alignment scores
+        goal_alignment_scores = [g.get('alignmentScore', 50) for g in goals]
+        avg_goal_score = sum(goal_alignment_scores) / len(goal_alignment_scores)
+
+        # Theme coverage bonus
+        themes_covered = len(strategic_tie_back.get('strategicThemesCovered', []))
+        total_themes = len(self.theme_names)
+        theme_coverage_pct = (themes_covered / total_themes * 100) if total_themes > 0 else 0
+
+        theme_bonus = 0
+        if theme_coverage_pct >= 75:
+            theme_bonus = 10
+        elif theme_coverage_pct >= 50:
+            theme_bonus = 5
+
+        # Theme gap penalty (for critical themes not covered)
+        theme_gaps = len(strategic_tie_back.get('strategicThemesGaps', []))
+        theme_penalty = min(theme_gaps * 3, 15)  # Cap at 15 points penalty
+
+        # Coherence bonus (if goals form a unified narrative)
+        coherence_bonus = 5 if len(goals) >= 3 else 0
+
+        # Strategy mismatch penalty
+        strategy_confidence = strategy_coherence.get('confidenceScore', 100)
+        mismatch_penalty = 0
+        if strategy_confidence < 50:
+            # Major mismatch - cap score at 40
+            mismatch_penalty = max(0, avg_goal_score - 40)
+        elif strategy_confidence < 70:
+            # Moderate concern - apply penalty
+            mismatch_penalty = 10
+
+        # Calculate final alignment score
+        alignment_score = avg_goal_score + theme_bonus - theme_penalty + coherence_bonus - mismatch_penalty
+        alignment_score = max(0, min(100, round(alignment_score)))
+
+        # Calculate impact score based on seniority and alignment
+        impact_base = self._calculate_impact_base(seniority)
+        impact_alignment_factor = alignment_score / 100
+        impact_score = round(impact_base * impact_alignment_factor)
+        impact_score = max(0, min(100, impact_score))
+
+        # Calculate coherence score
+        coherence_factors = [
+            75,  # Base internal consistency
+            60 + theme_coverage_pct * 0.3,  # Balanced coverage
+            70  # Weight distribution
+        ]
+        coherence_score = round(sum(coherence_factors) / len(coherence_factors))
+        coherence_score = max(0, min(100, coherence_score))
+
+        return {
+            'alignment': alignment_score,
+            'alignmentBreakdown': {
+                'averageGoalScore': round(avg_goal_score, 1),
+                'themeCoverageBonus': theme_bonus,
+                'themeGapPenalty': -theme_penalty,
+                'coherenceBonus': coherence_bonus,
+                'strategyMismatchPenalty': -mismatch_penalty,
+                'themeCoveragePercentage': round(theme_coverage_pct, 1),
+                'strategyConfidence': strategy_confidence
+            },
+            'impact': impact_score,
+            'coherence': coherence_score
+        }
+
+    def _calculate_impact_base(self, seniority: str) -> int:
+        """Calculate base impact score by seniority level."""
+        # Higher seniority = higher potential impact
+        impact_bases = {
+            'executive': 85,
+            'senior': 75,
+            'mid': 65,
+            'junior': 55
+        }
+        return impact_bases.get(seniority, 65)
 
     def _parse_goals(
         self,
@@ -692,10 +840,17 @@ class MockAlignmentClient:
         seniority: str,
         department: str
     ) -> Dict[str, Any]:
-        """Create a goal analysis with role-contextualized rationales and strategy tie-back."""
+        """Create a goal analysis with strategy-tied scoring and role-contextualized rationales."""
         aligned_objectives = self._assign_mock_objectives(goal_num)
-        alignment_score = 70 + (goal_num % 20)
-        impact_score = 65 + (goal_num % 25)
+
+        # Calculate alignment score using weighted formula based on strategy tie-back
+        score_breakdown = self._calculate_goal_alignment_score(
+            goal_text, aligned_objectives, seniority, goal_num
+        )
+        alignment_score = score_breakdown['totalScore']
+
+        # Impact score based on seniority and goal characteristics
+        impact_score = self._calculate_goal_impact_score(goal_text, seniority, alignment_score)
 
         # Generate role-specific alignment rationale with strategy reference
         alignment_rationale = self._generate_alignment_rationale(
@@ -724,6 +879,7 @@ class MockAlignmentClient:
             "goalId": f"G{goal_num}",
             "goalText": goal_text,
             "alignmentScore": alignment_score,
+            "alignmentScoreBreakdown": score_breakdown,
             "impactScore": impact_score,
             "alignedObjectives": aligned_objectives,
             "strategicTieBack": strategic_tie_back,
@@ -733,6 +889,151 @@ class MockAlignmentClient:
             "gaps": self._identify_gaps(goal_num, seniority),
             "smartAssessment": smart
         }
+
+    def _calculate_goal_alignment_score(
+        self,
+        goal_text: str,
+        aligned_objectives: List[str],
+        seniority: str,
+        goal_num: int
+    ) -> Dict[str, Any]:
+        """
+        Calculate alignment score using weighted formula based on strategy tie-back.
+
+        Weights:
+        - Strategic Objective Mapping: 40%
+        - Vision/Mission Connection: 30%
+        - Strategic Theme Alignment: 20%
+        - Role-Appropriate Translation: 10%
+        """
+        text_lower = goal_text.lower()
+
+        # 1. Strategic Objective Mapping (40% weight)
+        num_objectives = len(aligned_objectives)
+        if num_objectives >= 2:
+            obj_mapping_score = 100
+            obj_rationale = f"Maps to {num_objectives} strategic objectives ({', '.join(aligned_objectives)}) with clear linkage"
+        elif num_objectives == 1:
+            obj_mapping_score = 70
+            obj_rationale = f"Maps to objective {aligned_objectives[0]} with reasonable connection"
+        else:
+            obj_mapping_score = 30
+            obj_rationale = "Limited connection to strategic objectives identified"
+
+        # 2. Vision/Mission Connection (30% weight)
+        # Check for keywords that indicate strategic awareness
+        vision_keywords = ['leader', 'excellence', 'innovation', 'value', 'growth', 'customer', 'stakeholder']
+        mission_keywords = ['deliver', 'serve', 'achieve', 'enable', 'support', 'improve']
+
+        vision_hits = sum(1 for kw in vision_keywords if kw in text_lower)
+        mission_hits = sum(1 for kw in mission_keywords if kw in text_lower)
+
+        if vision_hits >= 2 or mission_hits >= 2:
+            vision_mission_score = 85
+            vm_rationale = f"Goal clearly supports the vision '{self.vision[:50]}...' and mission through explicit strategic language"
+        elif vision_hits >= 1 or mission_hits >= 1:
+            vision_mission_score = 70
+            vm_rationale = f"Goal supports the mission '{self.mission[:50]}...' without explicit reference"
+        else:
+            vision_mission_score = 45
+            vm_rationale = "Tangential relationship to stated vision and mission"
+
+        # 3. Strategic Theme Alignment (20% weight)
+        # Check if goal text relates to any strategic themes
+        theme_score = 40  # Default: no theme match
+        theme_rationale = "Does not directly address identified strategic themes"
+
+        for theme in self.theme_names:
+            theme_words = theme.lower().split()
+            if any(tw in text_lower for tw in theme_words if len(tw) > 3):
+                theme_score = 85
+                theme_rationale = f"Directly addresses strategic theme: '{theme}'"
+                break
+
+        # Also check for common theme-related terms
+        theme_indicators = ['efficiency', 'customer', 'quality', 'innovation', 'digital', 'sustainability', 'growth']
+        if theme_score < 85 and any(ind in text_lower for ind in theme_indicators):
+            theme_score = 65
+            theme_rationale = "Partially related to strategic themes through operational focus"
+
+        # 4. Role-Appropriate Translation (10% weight)
+        role_scores = {
+            'executive': {'enterprise': 100, 'strategic': 90, 'team': 60, 'individual': 40},
+            'senior': {'enterprise': 80, 'strategic': 100, 'team': 90, 'individual': 60},
+            'mid': {'enterprise': 60, 'strategic': 80, 'team': 100, 'individual': 80},
+            'junior': {'enterprise': 40, 'strategic': 60, 'team': 80, 'individual': 100}
+        }
+
+        # Detect goal scope from text
+        scope = 'team'  # Default
+        if any(w in text_lower for w in ['organization', 'company', 'enterprise', 'portfolio']):
+            scope = 'enterprise'
+        elif any(w in text_lower for w in ['strategy', 'strategic', 'vision', 'transformation']):
+            scope = 'strategic'
+        elif any(w in text_lower for w in ['my', 'personal', 'learn', 'skill', 'complete']):
+            scope = 'individual'
+
+        role_score = role_scores.get(seniority, role_scores['mid']).get(scope, 70)
+
+        if role_score >= 90:
+            role_rationale = f"Perfect translation of strategy for {seniority} level - appropriate scope and ambition"
+        elif role_score >= 70:
+            role_rationale = f"Acceptable scope for {seniority} level, could be better aligned to role expectations"
+        else:
+            role_rationale = f"Goal scope may be mismatched for {seniority} level position"
+
+        # Calculate weighted total
+        total_score = round(
+            (obj_mapping_score * 0.40) +
+            (vision_mission_score * 0.30) +
+            (theme_score * 0.20) +
+            (role_score * 0.10)
+        )
+
+        return {
+            'totalScore': max(0, min(100, total_score)),
+            'objectiveMappingScore': obj_mapping_score,
+            'objectiveMappingRationale': obj_rationale,
+            'visionMissionScore': vision_mission_score,
+            'visionMissionRationale': vm_rationale,
+            'themeAlignmentScore': theme_score,
+            'themeAlignmentRationale': theme_rationale,
+            'roleAppropriatenessScore': role_score,
+            'roleAppropriatenessRationale': role_rationale
+        }
+
+    def _calculate_goal_impact_score(
+        self,
+        goal_text: str,
+        seniority: str,
+        alignment_score: int
+    ) -> int:
+        """Calculate impact score based on seniority, alignment, and goal characteristics."""
+        # Base impact by seniority (higher seniority = higher potential impact)
+        base_scores = {
+            'executive': 80,
+            'senior': 70,
+            'mid': 60,
+            'junior': 50
+        }
+        base = base_scores.get(seniority, 60)
+
+        # Adjust based on goal alignment (better aligned = more impactful)
+        alignment_factor = alignment_score / 100
+
+        # Check for leverage indicators (goals that enable others)
+        text_lower = goal_text.lower()
+        leverage_keywords = ['enable', 'support', 'lead', 'mentor', 'establish', 'framework', 'system']
+        leverage_bonus = 10 if any(kw in text_lower for kw in leverage_keywords) else 0
+
+        # Check for measurable outcomes
+        has_metrics = any(char.isdigit() for char in goal_text) or any(
+            w in text_lower for w in ['%', 'percent', 'increase', 'reduce', 'improve by']
+        )
+        metrics_bonus = 5 if has_metrics else 0
+
+        impact_score = round(base * alignment_factor + leverage_bonus + metrics_bonus)
+        return max(0, min(100, impact_score))
 
     def _generate_alignment_rationale(
         self,
