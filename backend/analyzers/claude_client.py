@@ -228,7 +228,26 @@ Return ONLY valid JSON matching this structure:
 You analyze employee goals against organizational strategy to assess alignment, coherence, and strategic impact.
 Use semantic understanding to evaluate how well goals translate organizational strategy into role-appropriate actions.
 Consider the employee's position, seniority level, and scope of influence when evaluating goal appropriateness.
+IMPORTANT: Always explicitly reference the specific vision, mission, and strategic objectives when explaining alignment.
 Always return valid JSON."""
+
+        # Extract key strategic elements for explicit referencing
+        org_purpose = strategic_framework.get('organizationalPurpose', {})
+        vision = org_purpose.get('vision', 'Not specified')
+        mission = org_purpose.get('mission', 'Not specified')
+        values = org_purpose.get('values', [])
+
+        strategic_themes = strategic_framework.get('strategicThemes', [])
+        theme_names = [t.get('name', '') for t in strategic_themes if t.get('name')]
+
+        # Build strategic reference summary
+        strategic_summary = f"""
+KEY STRATEGIC REFERENCE POINTS (use these explicitly in your analysis):
+- VISION: "{vision}"
+- MISSION: "{mission}"
+- VALUES: {', '.join(values) if values else 'Not specified'}
+- STRATEGIC THEMES: {', '.join(theme_names) if theme_names else 'Not specified'}
+"""
 
         # Build employee context section if available
         employee_section = ""
@@ -249,8 +268,8 @@ EMPLOYEE CONTEXT:
                     employee_section += f"- {gw.get('goalText', '')[:80]}... (Weight: {weight})\n"
 
         prompt = f"""Analyze the alignment between employee goals and the strategic framework, considering the employee's role and level.
-
-STRATEGIC FRAMEWORK:
+{strategic_summary}
+FULL STRATEGIC FRAMEWORK:
 {json.dumps(strategic_framework, indent=2)}
 {employee_section}
 EMPLOYEE GOAL DOCUMENT:
@@ -258,39 +277,66 @@ EMPLOYEE GOAL DOCUMENT:
 
 ANALYSIS REQUIREMENTS:
 
-1. ROLE-APPROPRIATE ALIGNMENT: For each goal, assess:
+0. STRATEGY-GOAL COHERENCE CHECK (CRITICAL - DO THIS FIRST):
+   - Assess whether the employee's goals appear to be relevant to this specific organizational strategy
+   - Look for MISMATCHES: Do the goals reference different strategic priorities, different industry context, or different organizational focus than the strategy documents?
+   - If goals mention specific initiatives, products, or priorities NOT found in the strategy, flag this as a potential mismatch
+   - Consider if the employee might be from a different team/department than the strategy document covers
+   - Provide a coherence confidence score (0-100) indicating how confident you are these goals belong to this strategy
+
+1. EXPLICIT STRATEGIC TIE-BACK: For each goal, you MUST:
+   - Quote or directly reference which part of the vision/mission this goal supports
+   - Identify which specific strategic themes from the framework this goal addresses
+   - Explain how this goal contributes to the stated organizational values
+   - Map to specific strategic objectives by ID (F1, C2, P3, L1, etc.)
+
+2. ROLE-APPROPRIATE ALIGNMENT: For each goal, assess:
    - Does this goal reflect appropriate strategic translation for this role/level?
    - For executives: Are goals focused on enterprise-wide outcomes and strategic enablement?
    - For senior staff: Do goals bridge strategy to operational excellence?
    - For mid-level: Are goals focused on team/functional contributions to strategic objectives?
    - For junior staff: Do goals demonstrate understanding of how daily work connects to strategy?
 
-2. GOAL COHERENCE ASSESSMENT: Evaluate the employee's goal SET as a whole:
+3. GOAL COHERENCE ASSESSMENT: Evaluate the employee's goal SET as a whole:
    - Internal consistency: Do goals complement each other or conflict?
    - Balanced coverage: Does the set address multiple strategic perspectives appropriately for this role?
    - Weight distribution: If weights provided, is emphasis appropriately placed on strategic priorities?
    - Scope appropriateness: Are goals within this person's sphere of influence?
 
-3. STRATEGIC TRANSLATION QUALITY:
-   - Does this employee demonstrate understanding of organizational strategy?
-   - Are goals specific enough to be measurable yet connected to broader outcomes?
+4. STRATEGIC TRANSLATION QUALITY:
+   - Does this employee demonstrate understanding of the SPECIFIC organizational strategy provided?
+   - Are goals specific enough to be measurable yet connected to the stated vision and mission?
    - Do goals show appropriate ambition level for seniority (stretch for seniors, foundational for juniors)?
 
-4. IMPACT ANALYSIS: Evaluate potential strategic contribution:
+5. IMPACT ANALYSIS: Evaluate potential strategic contribution:
    - Direct vs. indirect strategic support
    - Leverage potential (does this goal enable others' success?)
    - Timeline alignment with strategic planning horizons
 
 SCORING CRITERIA:
-- Alignment Score (0-100): How well goals translate strategy for this specific role
+- Alignment Score (0-100): How well goals translate THIS SPECIFIC strategy for this role
 - Impact Score (0-100): Potential strategic contribution given role scope
 - Coherence Score (0-100): How well the goal SET works together
+- Strategy Coherence Score (0-100): Confidence that goals belong to this strategy context
 
 Return ONLY valid JSON matching this structure:
 {{
     "overallAlignmentScore": 75,
     "overallImpactScore": 68,
     "overallCoherenceScore": 72,
+    "strategyCoherenceCheck": {{
+        "confidenceScore": 85,
+        "belongsToStrategy": true,
+        "potentialMismatches": ["string - any identified mismatches between goals and strategy context"],
+        "assessment": "Detailed assessment of whether these goals appear to be written for this specific organizational strategy, with evidence"
+    }},
+    "strategicTieBack": {{
+        "visionAlignment": "How the goal set as a whole connects to: [quote the vision]",
+        "missionContribution": "How goals support the mission: [quote the mission]",
+        "valuesReflected": ["list which organizational values are reflected in the goals"],
+        "strategicThemesCovered": ["list which strategic themes from the framework are addressed"],
+        "strategicThemesGaps": ["list which strategic themes are NOT addressed by any goals"]
+    }},
     "roleAppropriatenessAssessment": "string - assessment of whether goals are appropriate for this role/level",
     "goals": [
         {{
@@ -299,7 +345,13 @@ Return ONLY valid JSON matching this structure:
             "alignmentScore": 82,
             "impactScore": 70,
             "alignedObjectives": ["F1", "P2"],
-            "alignmentRationale": "Detailed explanation of how this goal translates organizational strategy for this specific role, considering job title and seniority level",
+            "strategicTieBack": {{
+                "visionConnection": "How this specific goal connects to the organizational vision",
+                "missionSupport": "How this goal supports the stated mission",
+                "strategicThemes": ["which strategic themes this goal addresses"],
+                "objectiveMapping": "Explanation of why this maps to objectives F1, P2"
+            }},
+            "alignmentRationale": "Detailed explanation referencing SPECIFIC strategic content - quote vision/mission/themes",
             "impactRationale": "Assessment of potential strategic contribution given this employee's scope and influence",
             "roleAppropriateness": "Assessment of whether this goal is appropriate for the employee's level",
             "gaps": ["string"],
@@ -325,7 +377,7 @@ Return ONLY valid JSON matching this structure:
         "process": {{ "covered": 3, "total": 3, "percentage": 100 }},
         "learning": {{ "covered": 0, "total": 2, "percentage": 0 }}
     }},
-    "recommendations": ["string - specific recommendations for improving strategic alignment given this role"]
+    "recommendations": ["string - specific recommendations referencing the actual strategic content"]
 }}"""
 
         response = self.complete(prompt, system_prompt=system_prompt, max_tokens=8192)

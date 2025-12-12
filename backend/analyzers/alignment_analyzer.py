@@ -242,6 +242,38 @@ class AlignmentAnalyzer:
             analysis.get('overallCoherenceScore', 50)
         )
 
+        # Ensure strategy coherence check (mismatch detection)
+        if 'strategyCoherenceCheck' not in analysis:
+            analysis['strategyCoherenceCheck'] = {
+                'confidenceScore': 75,
+                'belongsToStrategy': True,
+                'potentialMismatches': [],
+                'assessment': ''
+            }
+        else:
+            scc = analysis['strategyCoherenceCheck']
+            scc['confidenceScore'] = self._clamp_score(scc.get('confidenceScore', 75))
+            scc['belongsToStrategy'] = scc.get('belongsToStrategy', True)
+            scc['potentialMismatches'] = scc.get('potentialMismatches', [])
+            scc['assessment'] = scc.get('assessment', '')
+
+        # Ensure strategic tie-back (explicit strategy reference)
+        if 'strategicTieBack' not in analysis:
+            analysis['strategicTieBack'] = {
+                'visionAlignment': '',
+                'missionContribution': '',
+                'valuesReflected': [],
+                'strategicThemesCovered': [],
+                'strategicThemesGaps': []
+            }
+        else:
+            stb = analysis['strategicTieBack']
+            stb['visionAlignment'] = stb.get('visionAlignment', '')
+            stb['missionContribution'] = stb.get('missionContribution', '')
+            stb['valuesReflected'] = stb.get('valuesReflected', [])
+            stb['strategicThemesCovered'] = stb.get('strategicThemesCovered', [])
+            stb['strategicThemesGaps'] = stb.get('strategicThemesGaps', [])
+
         # Ensure role appropriateness assessment
         if 'roleAppropriatenessAssessment' not in analysis:
             analysis['roleAppropriatenessAssessment'] = ''
@@ -261,6 +293,21 @@ class AlignmentAnalyzer:
             goal['impactRationale'] = goal.get('impactRationale', '')
             goal['roleAppropriateness'] = goal.get('roleAppropriateness', '')
             goal['gaps'] = goal.get('gaps', [])
+
+            # Ensure per-goal strategic tie-back
+            if 'strategicTieBack' not in goal:
+                goal['strategicTieBack'] = {
+                    'visionConnection': '',
+                    'missionSupport': '',
+                    'strategicThemes': [],
+                    'objectiveMapping': ''
+                }
+            else:
+                gtb = goal['strategicTieBack']
+                gtb['visionConnection'] = gtb.get('visionConnection', '')
+                gtb['missionSupport'] = gtb.get('missionSupport', '')
+                gtb['strategicThemes'] = gtb.get('strategicThemes', [])
+                gtb['objectiveMapping'] = gtb.get('objectiveMapping', '')
 
             # Ensure SMART assessment
             if 'smartAssessment' not in goal:
@@ -539,7 +586,7 @@ class AlignmentAnalyzer:
 class MockAlignmentClient:
     """
     Mock client for testing alignment analysis without API calls.
-    Generates role-contextualized rationales based on employee metadata.
+    Generates role-contextualized rationales based on employee metadata and strategic framework.
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -551,7 +598,18 @@ class MockAlignmentClient:
         goal_document_text: str,
         employee_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Return mock alignment analysis with role-contextualized rationales."""
+        """Return mock alignment analysis with role-contextualized rationales and strategy tie-back."""
+        # Extract strategic content for explicit referencing
+        org_purpose = strategic_framework.get('organizationalPurpose', {})
+        self.vision = org_purpose.get('vision', 'To be an industry leader')
+        self.mission = org_purpose.get('mission', 'Delivering value to stakeholders')
+        self.values = org_purpose.get('values', ['Excellence', 'Innovation', 'Integrity'])
+
+        strategic_themes = strategic_framework.get('strategicThemes', [])
+        self.theme_names = [t.get('name', '') for t in strategic_themes if t.get('name')]
+        if not self.theme_names:
+            self.theme_names = ['Operational Excellence', 'Customer Focus', 'Innovation']
+
         # Extract employee info for contextualized rationales
         emp_name = "the employee"
         job_title = "team member"
@@ -573,10 +631,18 @@ class MockAlignmentClient:
         # Generate coherence assessment
         coherence = self._generate_coherence_assessment(goals, seniority)
 
+        # Generate strategy coherence check
+        strategy_coherence = self._generate_strategy_coherence_check(goals, department)
+
+        # Generate strategic tie-back
+        strategic_tie_back = self._generate_strategic_tie_back(goals, seniority)
+
         return {
             "overallAlignmentScore": 72,
             "overallImpactScore": 68,
             "overallCoherenceScore": 70,
+            "strategyCoherenceCheck": strategy_coherence,
+            "strategicTieBack": strategic_tie_back,
             "roleAppropriatenessAssessment": role_assessment,
             "goals": goals,
             "goalSetCoherence": coherence,
@@ -626,12 +692,12 @@ class MockAlignmentClient:
         seniority: str,
         department: str
     ) -> Dict[str, Any]:
-        """Create a goal analysis with role-contextualized rationales."""
+        """Create a goal analysis with role-contextualized rationales and strategy tie-back."""
         aligned_objectives = self._assign_mock_objectives(goal_num)
         alignment_score = 70 + (goal_num % 20)
         impact_score = 65 + (goal_num % 25)
 
-        # Generate role-specific alignment rationale
+        # Generate role-specific alignment rationale with strategy reference
         alignment_rationale = self._generate_alignment_rationale(
             goal_text, job_title, seniority, department, aligned_objectives
         )
@@ -646,6 +712,11 @@ class MockAlignmentClient:
             goal_text, job_title, seniority
         )
 
+        # Generate per-goal strategic tie-back
+        strategic_tie_back = self._generate_goal_strategic_tie_back(
+            goal_text, aligned_objectives
+        )
+
         # Generate SMART assessment
         smart = self._assess_smart(goal_text)
 
@@ -655,6 +726,7 @@ class MockAlignmentClient:
             "alignmentScore": alignment_score,
             "impactScore": impact_score,
             "alignedObjectives": aligned_objectives,
+            "strategicTieBack": strategic_tie_back,
             "alignmentRationale": alignment_rationale,
             "impactRationale": impact_rationale,
             "roleAppropriateness": role_appropriateness,
@@ -823,6 +895,75 @@ class MockAlignmentClient:
                 f"Overall, this goal set tells a coherent story of contribution at the {seniority} level. "
                 f"The goals work together to demonstrate both individual expertise and organizational awareness. "
                 f"Strengthening explicit linkages between goals would improve the strategic narrative."
+            )
+        }
+
+    def _generate_strategy_coherence_check(
+        self,
+        goals: List[Dict[str, Any]],
+        department: str
+    ) -> Dict[str, Any]:
+        """Generate strategy-goal coherence check (mismatch detection)."""
+        return {
+            "confidenceScore": 85,
+            "belongsToStrategy": True,
+            "potentialMismatches": [],
+            "assessment": (
+                f"The goals for {department} appear to be well-aligned with the organizational strategy. "
+                f"The goals reference themes consistent with the vision '{self.vision[:50]}...' and "
+                f"support the mission of '{self.mission[:50]}...'. No significant mismatches detected "
+                f"between the goal content and the strategic framework provided. The goals appear to be "
+                f"written for this specific organizational context."
+            )
+        }
+
+    def _generate_strategic_tie_back(
+        self,
+        goals: List[Dict[str, Any]],
+        seniority: str
+    ) -> Dict[str, str]:
+        """Generate overall strategic tie-back assessment."""
+        covered_themes = self.theme_names[:2] if len(self.theme_names) >= 2 else self.theme_names
+        gap_themes = self.theme_names[2:] if len(self.theme_names) > 2 else []
+
+        return {
+            "visionAlignment": (
+                f"The goal set connects to the organizational vision '{self.vision}' by focusing on "
+                f"operational improvements and capability development that advance the organization's "
+                f"strategic aspirations. The goals demonstrate understanding of the long-term direction."
+            ),
+            "missionContribution": (
+                f"These goals support the mission '{self.mission}' through direct contribution to "
+                f"key operational outcomes. The employee demonstrates awareness of how their work "
+                f"enables the organization to deliver on its core purpose."
+            ),
+            "valuesReflected": self.values[:3] if self.values else ['Excellence', 'Integrity'],
+            "strategicThemesCovered": covered_themes,
+            "strategicThemesGaps": gap_themes if gap_themes else ["Learning & Growth initiatives"]
+        }
+
+    def _generate_goal_strategic_tie_back(
+        self,
+        goal_text: str,
+        aligned_objectives: List[str]
+    ) -> Dict[str, Any]:
+        """Generate per-goal strategic tie-back."""
+        obj_str = ", ".join(aligned_objectives)
+        theme = self.theme_names[0] if self.theme_names else "Operational Excellence"
+
+        return {
+            "visionConnection": (
+                f"This goal contributes to the vision '{self.vision[:60]}...' by "
+                f"enabling specific operational capabilities that advance strategic positioning."
+            ),
+            "missionSupport": (
+                f"Supports the mission '{self.mission[:60]}...' through direct contribution "
+                f"to stakeholder value and organizational effectiveness."
+            ),
+            "strategicThemes": [theme],
+            "objectiveMapping": (
+                f"Maps to objectives {obj_str} because the goal directly addresses "
+                f"capabilities and outcomes specified in these strategic objectives."
             )
         }
 
