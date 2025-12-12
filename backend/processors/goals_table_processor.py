@@ -558,11 +558,15 @@ class GoalsTableProcessor:
                         'hierarchy': 1
                     }
                 ],
+                # Include raw goals data for direct access by analyzer
+                'goals': employee.get('goals', []),
                 'employeeMetadata': {
                     'employeeName': employee.get('employeeName'),
                     'jobTitle': employee.get('jobTitle'),
                     'department': employee.get('department'),
-                    'seniorityLevel': employee.get('seniorityLevel')
+                    'seniorityLevel': employee.get('seniorityLevel'),
+                    # Also include goals in metadata for backward compatibility
+                    'goalsWithWeights': employee.get('goals', [])
                 },
                 'metadata': {
                     'pageCount': 1,

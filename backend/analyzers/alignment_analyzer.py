@@ -156,23 +156,13 @@ class AlignmentAnalyzer:
             'seniorityLevel': seniority_level
         }
 
-        # Extract goals with weights if available from structured sections
-        goals_with_weights = []
-        structured = goal_document.get('structuredSections', [])
-        for section in structured:
-            if section.get('heading', '').lower() == 'goals':
-                # Parse goals from content (format from goals_table_processor)
-                content = section.get('content', '')
-                for line in content.split('\n'):
-                    if line.strip().startswith('Goal'):
-                        # Extract goal text and weight if present
-                        goal_info = {'goalText': line.strip()}
-                        if 'Weight:' in content:
-                            # Try to find weight on nearby line
-                            pass  # Weight parsing handled below
-                        goals_with_weights.append(goal_info)
+        # PRIORITY 1: Check for goalsWithWeights in employeeMetadata (from goals_table_processor)
+        goals_with_weights = emp_meta.get('goalsWithWeights', [])
+        if goals_with_weights:
+            context['goalsWithWeights'] = goals_with_weights
+            return context
 
-        # Also check raw goals data if from goals_table_processor
+        # PRIORITY 2: Check raw goals data at document level
         raw_goals = goal_document.get('goals', [])
         if raw_goals:
             goals_with_weights = []
@@ -183,9 +173,51 @@ class AlignmentAnalyzer:
                         'weight': goal.get('weight', ''),
                         'category': goal.get('category', '')
                     })
+            if goals_with_weights:
+                context['goalsWithWeights'] = goals_with_weights
+                return context
 
-        if goals_with_weights:
-            context['goalsWithWeights'] = goals_with_weights
+        # PRIORITY 3: Extract goals from structured sections
+        import re
+        structured = goal_document.get('structuredSections', [])
+        for section in structured:
+            if section.get('heading', '').lower() == 'goals':
+                content = section.get('content', '')
+                # Parse "Goal N: <text>" format
+                goal_pattern = re.compile(r'Goal\s*(\d+)\s*[:.]?\s*(.+?)(?=Goal\s*\d+|$|\n\n)', re.IGNORECASE | re.DOTALL)
+                matches = goal_pattern.findall(content)
+
+                if matches:
+                    goals_with_weights = []
+                    for match in matches:
+                        goal_block = match[1].strip()
+                        goal_lines = goal_block.split('\n')
+                        goal_text = goal_lines[0].strip()
+
+                        # Extract optional fields from following lines
+                        weight = ''
+                        category = ''
+                        description = ''
+                        for line in goal_lines[1:]:
+                            line_lower = line.strip().lower()
+                            if line_lower.startswith('weight:'):
+                                weight = line.split(':', 1)[-1].strip()
+                            elif line_lower.startswith('category:'):
+                                category = line.split(':', 1)[-1].strip()
+                            elif line_lower.startswith('description:'):
+                                description = line.split(':', 1)[-1].strip()
+
+                        if goal_text:
+                            goals_with_weights.append({
+                                'goalText': goal_text,
+                                'weight': weight,
+                                'category': category,
+                                'description': description
+                            })
+
+                    if goals_with_weights:
+                        context['goalsWithWeights'] = goals_with_weights
+                        return context
 
         return context
 
@@ -651,8 +683,16 @@ class MockAlignmentClient:
             seniority = employee_context.get('seniorityLevel') or seniority
             department = employee_context.get('department') or department
 
-        # Detect goals from text (simple parsing)
-        goals = self._parse_goals(goal_document_text, job_title, seniority, department)
+        # Extract structured goals from employee context if available (from Excel/CSV)
+        structured_goals = None
+        if employee_context:
+            structured_goals = employee_context.get('goalsWithWeights', [])
+
+        # Detect goals from text or use structured goals
+        goals = self._parse_goals(
+            goal_document_text, job_title, seniority, department,
+            structured_goals=structured_goals
+        )
 
         # Classify each goal using the Rigor × Alignment matrix
         classified_goals = self._classify_goals_matrix(goals, strategic_framework)
@@ -1127,33 +1167,132 @@ STRATEGIC COVERAGE CHECK
         text: str,
         job_title: str,
         seniority: str,
-        department: str
+        department: str,
+        structured_goals: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
-        """Parse goals and generate role-contextualized rationales."""
+        """Parse goals and generate role-contextualized rationales.
+
+        Args:
+            text: Raw document text (fallback for parsing)
+            job_title: Employee job title
+            seniority: Seniority level
+            department: Department name
+            structured_goals: Pre-parsed goals from Excel/CSV (preferred source)
+        """
         goals = []
-        lines = text.split('\n')
-
         goal_num = 0
-        for line in lines:
-            line_lower = line.lower().strip()
-            # Look for lines that might be goals
-            if (line_lower.startswith('goal') or
-                line_lower.startswith('objective') or
-                'reduce' in line_lower or
-                'improve' in line_lower or
-                'implement' in line_lower or
-                'achieve' in line_lower or
-                'complete' in line_lower):
 
-                if len(line) > 20:  # Substantial text
+        # PRIORITY 1: Use structured goals from Excel/CSV if available
+        if structured_goals and len(structured_goals) > 0:
+            for goal_data in structured_goals:
+                goal_text = goal_data.get('goalText', '').strip()
+                if goal_text and len(goal_text) > 5:  # Minimal validation
                     goal_num += 1
+                    # Include additional context from structured data
+                    weight = goal_data.get('weight', '')
+                    category = goal_data.get('category', '')
+
+                    # Create enhanced goal text if weight/category available
+                    enhanced_text = goal_text
+                    if category:
+                        enhanced_text = f"[{category}] {goal_text}"
+
                     goals.append(self._create_goal_analysis(
-                        goal_num, line.strip()[:200], job_title, seniority, department
+                        goal_num, enhanced_text[:300], job_title, seniority, department,
+                        weight=weight, category=category
                     ))
 
-        # Ensure at least some goals
+            if goals:
+                return goals
+
+        # PRIORITY 2: Parse from structured text format (from goals_table_processor)
+        # Look for "Goal N:" pattern from the processor output
+        import re
+        goal_pattern = re.compile(r'Goal\s*(\d+)\s*[:.]?\s*(.+?)(?=Goal\s*\d+|$)', re.IGNORECASE | re.DOTALL)
+        matches = goal_pattern.findall(text)
+
+        if matches:
+            for match in matches:
+                goal_text = match[1].strip()
+                # Clean up: remove Description/Category/Weight lines that may follow
+                goal_lines = goal_text.split('\n')
+                main_goal = goal_lines[0].strip()
+
+                if main_goal and len(main_goal) > 10:
+                    goal_num += 1
+                    # Extract category if present in following lines
+                    category = ''
+                    weight = ''
+                    for line in goal_lines[1:]:
+                        if 'category:' in line.lower():
+                            category = line.split(':', 1)[-1].strip()
+                        if 'weight:' in line.lower():
+                            weight = line.split(':', 1)[-1].strip()
+
+                    goals.append(self._create_goal_analysis(
+                        goal_num, main_goal[:300], job_title, seniority, department,
+                        weight=weight, category=category
+                    ))
+
+            if goals:
+                return goals
+
+        # PRIORITY 3: Parse from bullet points or numbered lists
+        lines = text.split('\n')
+        bullet_pattern = re.compile(r'^[\s]*[-•*]\s*(.+)$')
+        numbered_pattern = re.compile(r'^[\s]*\d+[\.\)]\s*(.+)$')
+
+        for line in lines:
+            line = line.strip()
+
+            # Check for bullet points
+            bullet_match = bullet_pattern.match(line)
+            if bullet_match:
+                goal_text = bullet_match.group(1).strip()
+                if len(goal_text) > 15:
+                    goal_num += 1
+                    goals.append(self._create_goal_analysis(
+                        goal_num, goal_text[:300], job_title, seniority, department
+                    ))
+                continue
+
+            # Check for numbered lists
+            numbered_match = numbered_pattern.match(line)
+            if numbered_match:
+                goal_text = numbered_match.group(1).strip()
+                if len(goal_text) > 15:
+                    goal_num += 1
+                    goals.append(self._create_goal_analysis(
+                        goal_num, goal_text[:300], job_title, seniority, department
+                    ))
+                continue
+
+        if goals:
+            return goals
+
+        # PRIORITY 4: Fallback - look for action-oriented lines
+        for line in lines:
+            line_lower = line.lower().strip()
+            # Look for lines that might be goals based on action verbs
+            action_verbs = ['reduce', 'improve', 'implement', 'achieve', 'complete',
+                           'increase', 'develop', 'establish', 'launch', 'deliver',
+                           'create', 'build', 'optimize', 'streamline', 'lead',
+                           'manage', 'support', 'maintain', 'grow', 'expand']
+
+            if any(verb in line_lower for verb in action_verbs) and len(line) > 20:
+                # Skip header-like lines
+                if not any(skip in line_lower for skip in ['employee:', 'position:', 'department:', 'level:', 'goals:']):
+                    goal_num += 1
+                    goals.append(self._create_goal_analysis(
+                        goal_num, line.strip()[:300], job_title, seniority, department
+                    ))
+
+        # Ensure at least one goal
         if not goals:
-            goals = [self._create_goal_analysis(1, "Process improvement goal", job_title, seniority, department)]
+            goals = [self._create_goal_analysis(
+                1, "Unable to parse specific goals from document",
+                job_title, seniority, department
+            )]
 
         return goals
 
@@ -1163,9 +1302,21 @@ STRATEGIC COVERAGE CHECK
         goal_text: str,
         job_title: str,
         seniority: str,
-        department: str
+        department: str,
+        weight: str = '',
+        category: str = ''
     ) -> Dict[str, Any]:
-        """Create a goal analysis with strategy-tied scoring and role-contextualized rationales."""
+        """Create a goal analysis with strategy-tied scoring and role-contextualized rationales.
+
+        Args:
+            goal_num: Goal number (1-indexed)
+            goal_text: The goal text
+            job_title: Employee job title
+            seniority: Seniority level
+            department: Department name
+            weight: Optional goal weight from Excel
+            category: Optional goal category from Excel
+        """
         aligned_objectives = self._assign_mock_objectives(goal_num)
 
         # Calculate alignment score using weighted formula based on strategy tie-back

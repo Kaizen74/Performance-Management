@@ -329,19 +329,91 @@ export function AlignmentDashboard() {
             </div>
           </div>
 
-          {/* Coherence Insight */}
-          <div className="bg-slate-50 rounded p-4">
-            <p className="text-sm text-slate-600">
-              {portfolioCoherence.avgScore >= 80
-                ? 'The portfolio demonstrates strong strategic alignment. Most goals are outcome-focused and directly tied to strategic objectives.'
-                : portfolioCoherence.avgScore >= 50
-                ? 'The portfolio shows moderate alignment but has opportunities for improvement. Consider reframing output-focused goals into measurable outcomes.'
-                : 'The portfolio requires significant revision. Many goals lack clear strategic linkage or focus on activities rather than outcomes.'}
-              {portfolioCoherence.totalDistractions > 0 &&
-                ` There are ${portfolioCoherence.totalDistractions} distraction goals that should be eliminated or redesigned.`}
-              {portfolioCoherence.totalRogueProjects > 0 &&
-                ` ${portfolioCoherence.totalRogueProjects} rogue projects have strong outcomes but need strategic anchoring.`}
-            </p>
+          {/* Detailed Coherence Narrative */}
+          <div className="space-y-4">
+            {/* Executive Summary */}
+            <div className="bg-slate-50 rounded p-4">
+              <h4 className="text-sm font-semibold text-slate-700 mb-2">Executive Summary</h4>
+              <p className="text-sm text-slate-600">
+                {portfolioCoherence.avgScore >= 80
+                  ? `Strong strategic execution posture. ${Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% of goals qualify as Strategic Drivers with clear outcome orientation and strategy linkage.`
+                  : portfolioCoherence.avgScore >= 50
+                  ? `Moderate strategic alignment with execution gaps. Only ${Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% of goals are Strategic Drivers. The remaining ${100 - Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% represent efficiency loss or strategic drift.`
+                  : `Critical strategic drift detected. Just ${Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% of goals drive strategic outcomes. The portfolio requires substantial revision to align with organizational priorities.`}
+              </p>
+            </div>
+
+            {/* Risk Analysis */}
+            {(portfolioCoherence.totalBusyWork > 0 || portfolioCoherence.totalDistractions > 0 || portfolioCoherence.totalRogueProjects > 0) && (
+              <div className="bg-amber-50 border border-amber-200 rounded p-4">
+                <h4 className="text-sm font-semibold text-amber-800 mb-2">Risk Analysis</h4>
+                <ul className="text-sm text-amber-700 space-y-2">
+                  {portfolioCoherence.totalBusyWork > 0 && (
+                    <li>
+                      <span className="font-medium">Busy Work Trap ({portfolioCoherence.totalBusyWork} goals, {Math.round((portfolioCoherence.totalBusyWork / totalGoalsClassified) * 100)}%):</span>{' '}
+                      These goals show strategic intent but measure activities instead of outcomes.
+                      Reframe using action verbs (increase, reduce, achieve) with quantifiable targets.
+                    </li>
+                  )}
+                  {portfolioCoherence.totalRogueProjects > 0 && (
+                    <li>
+                      <span className="font-medium">Rogue Projects ({portfolioCoherence.totalRogueProjects} goals, {Math.round((portfolioCoherence.totalRogueProjects / totalGoalsClassified) * 100)}%):</span>{' '}
+                      Well-formed outcome goals that don't connect to current strategy.
+                      Review if strategy needs updating or if goals should be redirected.
+                    </li>
+                  )}
+                  {portfolioCoherence.totalDistractions > 0 && (
+                    <li>
+                      <span className="font-medium">Distractions ({portfolioCoherence.totalDistractions} goals, {Math.round((portfolioCoherence.totalDistractions / totalGoalsClassified) * 100)}%):</span>{' '}
+                      Neither outcome-focused nor strategically aligned. Consider eliminating or completely redesigning these goals.
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            <div className="bg-blue-50 border border-blue-200 rounded p-4">
+              <h4 className="text-sm font-semibold text-blue-800 mb-2">Priority Actions</h4>
+              <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                {portfolioCoherence.totalDistractions > 0 && (
+                  <li>
+                    Eliminate or redesign {portfolioCoherence.totalDistractions} distraction goal{portfolioCoherence.totalDistractions > 1 ? 's' : ''} that consume resources without strategic value
+                  </li>
+                )}
+                {portfolioCoherence.totalBusyWork > 2 && (
+                  <li>
+                    Convert {portfolioCoherence.totalBusyWork} output-focused goals to outcome statements with measurable success criteria
+                  </li>
+                )}
+                {portfolioCoherence.totalRogueProjects > 0 && (
+                  <li>
+                    Anchor {portfolioCoherence.totalRogueProjects} rogue project{portfolioCoherence.totalRogueProjects > 1 ? 's' : ''} to specific strategic themes or reconsider strategic priorities
+                  </li>
+                )}
+                {portfolioCoherence.avgScore < 70 && (
+                  <li>
+                    Conduct goal-writing workshops focusing on the Rigor × Alignment framework
+                  </li>
+                )}
+                {portfolioCoherence.totalStrategicDrivers < totalGoalsClassified * 0.5 && (
+                  <li>
+                    Target minimum 50% Strategic Drivers in next goal-setting cycle (currently {Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}%)
+                  </li>
+                )}
+              </ol>
+            </div>
+
+            {/* Coherence Trend Indicator */}
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-200">
+              <span>Analysis based on {totalGoalsClassified} goals across {portfolioCoherence.analysesWithCoherence} employee{portfolioCoherence.analysesWithCoherence > 1 ? 's' : ''}</span>
+              <span className={`font-medium ${
+                portfolioCoherence.avgScore >= 80 ? 'text-teal-600' :
+                portfolioCoherence.avgScore >= 50 ? 'text-amber-600' : 'text-rose-600'
+              }`}>
+                Coherence Index: {portfolioCoherence.avgScore}%
+              </span>
+            </div>
           </div>
         </div>
       )}
