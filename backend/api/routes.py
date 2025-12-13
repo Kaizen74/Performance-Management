@@ -102,6 +102,18 @@ async def upload_goals_table(
         # Convert to goal documents
         goal_documents = processor.to_goal_documents(processed_data)
 
+        # Clear previous goal documents before adding new ones
+        # This prevents accumulation across multiple uploads
+        old_goal_ids = [
+            doc_id for doc_id, doc in document_store.items()
+            if doc.get('documentType') == 'goals'
+        ]
+        for doc_id in old_goal_ids:
+            del document_store[doc_id]
+
+        # Also clear previous analyses since we're uploading new goals
+        analysis_store.clear()
+
         # Store all employee goal documents
         for doc in goal_documents:
             document_store[doc['documentId']] = doc
