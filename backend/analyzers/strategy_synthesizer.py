@@ -146,8 +146,16 @@ class StrategySynthesizer:
             for section in sections:
                 heading = section.get('heading', '')
                 content = section.get('content', '')
-                if heading and content:
-                    section_text += f"\n## {heading}\n{content}\n"
+                # Only include sections with meaningful headings (not fragmented keywords)
+                # A good heading should have at least 2 words or be a recognized section name
+                heading_words = heading.split()
+                is_valid_heading = (
+                    len(heading_words) >= 2 or
+                    heading.lower() in ['vision', 'mission', 'values', 'strategy', 'objectives',
+                                        'goals', 'overview', 'summary', 'introduction', 'conclusion']
+                )
+                if heading and content and is_valid_heading and len(content) > 20:
+                    section_text += f"\n{heading}\n{content}\n"
 
             doc_text = f"=== DOCUMENT: {filename} ===\n"
             if section_text:
@@ -597,6 +605,66 @@ class MockClaudeClient:
 
         return f"Focus on {keywords[0]} initiatives"
 
+    def _is_coherent_text(self, text: str) -> bool:
+        """Check if text is a coherent sentence/phrase, not fragmented keywords."""
+        import re
+
+        # Too short or too long
+        if len(text) < 15 or len(text) > 300:
+            return False
+
+        # Count words
+        words = text.split()
+        if len(words) < 4:
+            return False
+
+        # Check for common sentence structure indicators
+        # Should have at least one verb-like word
+        action_words = ['achieve', 'improve', 'increase', 'reduce', 'maintain', 'deliver',
+                        'ensure', 'drive', 'develop', 'build', 'create', 'implement',
+                        'establish', 'enhance', 'optimize', 'grow', 'expand', 'strengthen',
+                        'provide', 'support', 'enable', 'transform', 'lead', 'manage']
+
+        has_action = any(word in text.lower() for word in action_words)
+        if not has_action:
+            return False
+
+        # Check it's not just a list of keywords (should have connecting words)
+        connecting_words = ['the', 'to', 'and', 'of', 'in', 'for', 'by', 'with', 'our', 'a', 'an', 'through']
+        connecting_count = sum(1 for word in words if word.lower() in connecting_words)
+        if connecting_count < 1:
+            return False
+
+        # Shouldn't start with ## or other markdown artifacts
+        if text.startswith('#') or text.startswith('|'):
+            return False
+
+        # Shouldn't be all caps (likely a heading misidentified)
+        if text.isupper():
+            return False
+
+        return True
+
+    def _clean_objective_text(self, text: str) -> str:
+        """Clean and normalize objective text."""
+        import re
+
+        # Remove markdown artifacts
+        text = re.sub(r'^#+\s*', '', text)
+        text = re.sub(r'\|', ' ', text)
+
+        # Remove multiple spaces
+        text = re.sub(r'\s+', ' ', text)
+
+        # Remove leading/trailing punctuation
+        text = text.strip(' \t\n\r-•*:;,.')
+
+        # Capitalize first letter
+        if text and text[0].islower():
+            text = text[0].upper() + text[1:]
+
+        return text
+
     def _extract_objectives(self, text: str, themes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Extract strategic objectives organized by BSC perspective."""
         import re
@@ -623,29 +691,30 @@ class MockClaudeClient:
         for pattern in objective_patterns:
             matches = re.findall(pattern, text_lower)
             for match in matches:
-                if match not in found_objectives and len(match) > 15:
-                    found_objectives.append(match)
+                cleaned = self._clean_objective_text(match)
+                if cleaned not in found_objectives and self._is_coherent_text(cleaned):
+                    found_objectives.append(cleaned)
 
         # Also look for bullet points and numbered items that look like objectives
         lines = text.split('\n')
         for line in lines:
             line_clean = re.sub(r'^[\s\-•*\d.]+', '', line).strip()
-            line_lower = line_clean.lower()
-            if (len(line_clean) > 20 and len(line_clean) < 200 and
-                any(word in line_lower for word in ['achieve', 'improve', 'increase', 'reduce', 'maintain', 'deliver', 'ensure', 'drive'])):
-                if line_lower not in found_objectives:
-                    found_objectives.append(line_lower)
+            line_clean = self._clean_objective_text(line_clean)
+            if self._is_coherent_text(line_clean):
+                if line_clean.lower() not in [o.lower() for o in found_objectives]:
+                    found_objectives.append(line_clean)
 
         # Categorize objectives by perspective
         obj_counters = {'F': 1, 'C': 1, 'P': 1, 'L': 1}
 
         for obj_text in found_objectives[:20]:  # Process up to 20 objectives
             # Determine perspective based on keywords
+            obj_text_lower = obj_text.lower()
             best_perspective = None
             best_score = 0
 
             for p_name, p_data in perspectives.items():
-                score = sum(1 for kw in p_data['keywords'] if kw in obj_text)
+                score = sum(1 for kw in p_data['keywords'] if kw in obj_text_lower)
                 if score > best_score:
                     best_score = score
                     best_perspective = p_name
@@ -660,18 +729,18 @@ class MockClaudeClient:
                 related_themes = []
                 for theme in themes:
                     theme_lower = theme['name'].lower()
-                    if any(word in obj_text for word in theme_lower.split()):
+                    if any(word in obj_text_lower for word in theme_lower.split()):
                         related_themes.append(theme['name'])
                         if obj_id not in theme['linkedObjectives']:
                             theme['linkedObjectives'].append(obj_id)
 
                 # Extract key measures from the text
-                measures = self._extract_measures(obj_text, text)
+                measures = self._extract_measures(obj_text_lower, text)
 
-                # Capitalize and clean the objective text
-                obj_text_clean = obj_text.strip().capitalize()
-                if not obj_text_clean.endswith('.'):
-                    obj_text_clean = obj_text_clean.rstrip('.,;:')
+                # Use the already cleaned objective text
+                obj_text_clean = obj_text
+                if obj_text_clean and obj_text_clean[0].islower():
+                    obj_text_clean = obj_text_clean[0].upper() + obj_text_clean[1:]
 
                 perspectives[best_perspective]['objectives'].append({
                     "id": obj_id,
