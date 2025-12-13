@@ -1,51 +1,31 @@
 import { useAnalysis } from '../contexts/AnalysisContext';
 
-// Mock framework for demonstration
-const MOCK_FRAMEWORK = {
-  organizationalPurpose: {
-    vision: "To be the leading sustainable logistics provider in Asia-Pacific by 2030",
-    mission: "We deliver excellence through innovation, connecting businesses to opportunities while minimizing environmental impact",
-    values: ["Innovation", "Integrity", "Sustainability", "Excellence", "Collaboration"]
-  },
-  strategicPerspectives: {
-    financial: {
-      objectives: [
-        { id: "F1", objective: "Achieve 12% revenue CAGR", keyMeasures: ["Revenue growth"], strategicThemes: ["Growth"] },
-        { id: "F2", objective: "Maintain EBITDA margin >18%", keyMeasures: ["EBITDA margin"], strategicThemes: ["Efficiency"] }
-      ]
-    },
-    customer: {
-      objectives: [
-        { id: "C1", objective: "Achieve NPS score >70", keyMeasures: ["NPS"], strategicThemes: ["Customer Excellence"] },
-        { id: "C2", objective: "95% on-time delivery", keyMeasures: ["Delivery rate"], strategicThemes: ["Quality"] }
-      ]
-    },
-    internalProcess: {
-      objectives: [
-        { id: "P1", objective: "AI-driven route optimization", keyMeasures: ["Route efficiency"], strategicThemes: ["Digital"] },
-        { id: "P2", objective: "Carbon neutrality by 2028", keyMeasures: ["Emissions"], strategicThemes: ["Sustainability"] },
-        { id: "P3", objective: "15% cost reduction", keyMeasures: ["Cost per unit"], strategicThemes: ["Efficiency"] }
-      ]
-    },
-    learningGrowth: {
-      objectives: [
-        { id: "L1", objective: "Build digital capabilities", keyMeasures: ["Digital skills"], strategicThemes: ["Digital"] },
-        { id: "L2", objective: "Employee engagement >80%", keyMeasures: ["Engagement"], strategicThemes: ["Culture"] }
-      ]
-    }
-  },
-  strategicThemes: [
-    { themeId: "T1", name: "Digital Transformation", linkedObjectives: ["P1", "L1"] },
-    { themeId: "T2", name: "Sustainability", linkedObjectives: ["P2", "F1"] },
-    { themeId: "T3", name: "Operational Excellence", linkedObjectives: ["F2", "P3", "C2"] }
-  ]
-};
-
 export function StrategicFrameworkView() {
   const { strategicFramework, setCurrentStep } = useAnalysis();
 
-  // Use mock if no real framework
-  const framework = strategicFramework || MOCK_FRAMEWORK;
+  // If no framework available, show loading/error state
+  if (!strategicFramework) {
+    return (
+      <div className="max-w-2xl mx-auto text-center py-12">
+        <div className="bg-amber-50 rounded-lg border border-amber-200 p-8">
+          <h2 className="text-xl font-semibold text-amber-800 mb-2">
+            No Strategic Framework Available
+          </h2>
+          <p className="text-amber-700 mb-4">
+            The strategic framework has not been generated yet. Please upload strategy documents and run the analysis.
+          </p>
+          <button
+            onClick={() => setCurrentStep('uploadStrategy')}
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            Upload Strategy Documents
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const framework = strategicFramework;
 
   const perspectives = [
     { key: 'financial', label: 'Financial', icon: '💰', color: 'blue' },
