@@ -1,119 +1,166 @@
-import { useAnalysis, GoalRecommendation } from '../contexts/AnalysisContext';
-
-// Mock recommendations for demonstration
-const MOCK_RECOMMENDATIONS: GoalRecommendation[] = [
-  {
-    recommendationId: 'R1',
-    revisedGoal: {
-      objective: 'Lead digital transformation initiative for warehouse operations',
-      keyResults: [
-        'Deploy AI-powered inventory forecasting by Q2',
-        'Achieve 25% reduction in stockouts',
-        'Train 100% of warehouse staff on new system',
-      ],
-      timeline: 'Q2 2025',
-      metrics: ['System uptime', 'Forecast accuracy', 'Training completion rate'],
-    },
-    strategicLinkages: ['P1', 'L1', 'C2'],
-    predictedAlignmentGain: 15,
-    evidence: {
-      source: 'McKinsey Digital Operations Report 2024',
-      finding: 'AI-driven forecasting reduces stockouts by 20-35%',
-    },
-    implementationNotes: 'Requires IT partnership and change management plan',
-  },
-  {
-    recommendationId: 'R2',
-    revisedGoal: {
-      objective: 'Implement sustainability metrics in operations',
-      keyResults: [
-        'Reduce carbon emissions per shipment by 15%',
-        'Achieve 90% waste diversion rate',
-        'Complete sustainability reporting framework',
-      ],
-      timeline: 'Q4 2025',
-      metrics: ['Carbon per unit', 'Waste diversion %', 'Reporting compliance'],
-    },
-    strategicLinkages: ['P2', 'F2'],
-    predictedAlignmentGain: 12,
-    evidence: {
-      source: 'World Economic Forum Sustainability Report',
-      finding: 'Operational sustainability improves margin by 3-5%',
-    },
-    implementationNotes: 'Align with corporate sustainability team',
-  },
-  {
-    recommendationId: 'R3',
-    revisedGoal: {
-      objective: 'Establish customer feedback loop for service improvement',
-      keyResults: [
-        'Implement real-time delivery tracking with NPS survey',
-        'Achieve response rate of 30% on delivery feedback',
-        'Reduce customer complaints by 25%',
-      ],
-      timeline: 'Q3 2025',
-      metrics: ['Survey response rate', 'NPS score', 'Complaint volume'],
-    },
-    strategicLinkages: ['C1', 'C2', 'P3'],
-    predictedAlignmentGain: 18,
-    evidence: {
-      source: 'Harvard Business Review - Customer Feedback Systems',
-      finding: 'Real-time feedback improves NPS by 10-15 points',
-    },
-    implementationNotes: 'Requires CX team collaboration and IT support',
-  },
-  {
-    recommendationId: 'R4',
-    revisedGoal: {
-      objective: 'Develop continuous improvement culture through Lean Six Sigma',
-      keyResults: [
-        'Complete LSS Green Belt certification',
-        'Lead 3 improvement projects with measurable ROI',
-        'Train 5 team members in basic LSS tools',
-      ],
-      timeline: 'Q4 2025',
-      metrics: ['Certifications', 'Project ROI', 'Team training hours'],
-    },
-    strategicLinkages: ['L1', 'L2', 'P3'],
-    predictedAlignmentGain: 10,
-    evidence: {
-      source: 'ASQ Quality Progress Survey',
-      finding: 'LSS projects average 4:1 ROI',
-    },
-    implementationNotes: 'Budget needed for certification program',
-  },
-  {
-    recommendationId: 'R5',
-    revisedGoal: {
-      objective: 'Drive cost optimization through process automation',
-      keyResults: [
-        'Identify and automate 5 manual processes',
-        'Achieve $300K in annual cost savings',
-        'Improve process cycle time by 30%',
-      ],
-      timeline: 'Q4 2025',
-      metrics: ['Processes automated', 'Cost savings', 'Cycle time'],
-    },
-    strategicLinkages: ['F2', 'P3', 'P1'],
-    predictedAlignmentGain: 14,
-    evidence: {
-      source: 'Deloitte Automation Survey 2024',
-      finding: 'Process automation delivers 15-25% cost reduction',
-    },
-    implementationNotes: 'Cross-functional project requiring RPA tools',
-  },
-];
+import { useState, useEffect } from 'react';
+import { useAnalysis, GoalRecommendation, RecommendationSet } from '../contexts/AnalysisContext';
 
 export function RecommendationsPanel() {
-  const { selectedDocumentId, recommendations, setCurrentStep, selectDocument } = useAnalysis();
+  const {
+    selectedDocumentId,
+    recommendations,
+    addRecommendations,
+    setCurrentStep,
+    selectDocument,
+    apiKey,
+    goalAnalyses
+  } = useAnalysis();
 
-  // Use mock if no real recommendations
-  const recSet = recommendations.get(selectedDocumentId || '') || {
-    documentId: selectedDocumentId || 'mock',
-    recommendations: MOCK_RECOMMENDATIONS,
-    projectedNewAlignmentScore: 88,
-    projectedNewImpactScore: 82,
-  };
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Get current analysis for the selected document
+  const currentAnalysis = goalAnalyses.find(a => a.documentId === selectedDocumentId);
+
+  // Fetch recommendations when panel is shown and we don't have them cached
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      if (!selectedDocumentId || !apiKey) return;
+
+      // Check if we already have recommendations for this document
+      if (recommendations.has(selectedDocumentId)) return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`/api/recommendations/${selectedDocumentId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: apiKey }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || `Failed to generate recommendations: ${response.status}`);
+        }
+
+        const recData = await response.json();
+        addRecommendations(selectedDocumentId, recData as RecommendationSet);
+      } catch (err) {
+        console.error('Error fetching recommendations:', err);
+        setError(err instanceof Error ? err.message : 'Failed to generate recommendations');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecommendations();
+  }, [selectedDocumentId, apiKey, recommendations, addRecommendations]);
+
+  // Get recommendations for selected document
+  const recSet = recommendations.get(selectedDocumentId || '');
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="space-y-6" data-testid="recommendations-panel">
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 text-white">
+          <h2 className="text-2xl font-bold mb-2">Generating AI-Powered Recommendations</h2>
+          <p className="opacity-90 mb-4">
+            Analyzing goals and generating improvement suggestions...
+          </p>
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="space-y-6" data-testid="recommendations-panel">
+        <div className="bg-red-50 rounded-lg border border-red-200 p-6">
+          <h2 className="text-xl font-bold text-red-800 mb-2">Recommendation Generation Failed</h2>
+          <p className="text-red-600 mb-4">{error}</p>
+          <div className="flex space-x-3">
+            <button
+              onClick={() => {
+                // Clear cached recommendation to retry
+                setError(null);
+                setLoading(true);
+                // Trigger re-fetch by removing from cache conceptually
+                const fetchAgain = async () => {
+                  try {
+                    const response = await fetch(`/api/recommendations/${selectedDocumentId}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ api_key: apiKey }),
+                    });
+                    if (!response.ok) {
+                      const errData = await response.json().catch(() => ({}));
+                      throw new Error(errData.detail || 'Failed to generate recommendations');
+                    }
+                    const recData = await response.json();
+                    addRecommendations(selectedDocumentId!, recData as RecommendationSet);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to generate recommendations');
+                  } finally {
+                    setLoading(false);
+                  }
+                };
+                fetchAgain();
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+            <button
+              onClick={() => {
+                selectDocument(null);
+                setCurrentStep('dashboard');
+              }}
+              className="px-4 py-2 border border-red-300 text-red-700 rounded-lg hover:bg-red-50 transition-colors"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // No recommendations available
+  if (!recSet || recSet.recommendations.length === 0) {
+    return (
+      <div className="space-y-6" data-testid="recommendations-panel">
+        <div className="bg-amber-50 rounded-lg border border-amber-200 p-8 text-center">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
+            <svg className="w-8 h-8 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-amber-800 mb-2">No Recommendations Available</h2>
+          <p className="text-amber-700 mb-4">
+            {selectedDocumentId
+              ? "Unable to generate recommendations for this document. Please ensure the goal analysis has been completed first."
+              : "Please select an employee document from the dashboard to view recommendations."}
+          </p>
+          <button
+            onClick={() => {
+              selectDocument(null);
+              setCurrentStep('dashboard');
+            }}
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+          >
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate baseline scores from current analysis
+  const baselineAlignment = currentAnalysis?.overallAlignmentScore || 50;
+  const baselineImpact = currentAnalysis?.overallImpactScore || 50;
 
   return (
     <div className="space-y-6" data-testid="recommendations-panel">
@@ -121,28 +168,61 @@ export function RecommendationsPanel() {
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 text-white">
         <h2 className="text-2xl font-bold mb-2">AI-Powered Recommendations</h2>
         <p className="opacity-90 mb-4">
-          {recSet.recommendations.length} strategic goal improvements identified
+          {recSet.recommendations.length} strategic goal improvements identified for{' '}
+          {currentAnalysis?.documentName || 'this employee'}
         </p>
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white/10 rounded-lg p-4">
             <p className="text-sm opacity-75">Projected Alignment</p>
             <p className="text-3xl font-bold">{recSet.projectedNewAlignmentScore}</p>
             <p className="text-sm text-green-300">
-              +{recSet.projectedNewAlignmentScore - 72} improvement
+              +{recSet.projectedNewAlignmentScore - baselineAlignment} improvement
             </p>
           </div>
           <div className="bg-white/10 rounded-lg p-4">
             <p className="text-sm opacity-75">Projected Impact</p>
             <p className="text-3xl font-bold">{recSet.projectedNewImpactScore}</p>
             <p className="text-sm text-green-300">
-              +{recSet.projectedNewImpactScore - 68} improvement
+              +{recSet.projectedNewImpactScore - baselineImpact} improvement
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Current vs Projected comparison */}
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <h3 className="font-semibold text-slate-900 mb-3">Score Improvement Summary</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm text-slate-600 mb-1">Current Alignment</p>
+            <div className="flex items-center space-x-2">
+              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-slate-400 rounded-full"
+                  style={{ width: `${baselineAlignment}%` }}
+                />
+              </div>
+              <span className="text-sm font-medium text-slate-600 w-8">{baselineAlignment}</span>
+            </div>
+          </div>
+          <div>
+            <p className="text-sm text-slate-600 mb-1">Projected Alignment</p>
+            <div className="flex items-center space-x-2">
+              <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-teal-500 rounded-full"
+                  style={{ width: `${recSet.projectedNewAlignmentScore}%` }}
+                />
+              </div>
+              <span className="text-sm font-medium text-teal-600 w-8">{recSet.projectedNewAlignmentScore}</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Recommendations */}
       <div className="space-y-4">
+        <h3 className="font-semibold text-slate-900">Recommended Goal Improvements</h3>
         {recSet.recommendations.map((rec, index) => (
           <div
             key={rec.recommendationId}
