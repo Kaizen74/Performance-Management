@@ -51,7 +51,7 @@ class AlignmentAnalyzer:
     Uses Claude API for semantic analysis (not keyword matching).
     """
 
-    MAX_GOAL_DOCUMENTS = 100
+    MAX_GOAL_DOCUMENTS = 500
     PERSPECTIVES = ['financial', 'customer', 'process', 'learning']
 
     def __init__(

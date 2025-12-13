@@ -303,44 +303,12 @@ async def analyze_goals(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/recommendations/{document_id}")
-async def generate_recommendations(
-    document_id: str,
-    api_key: str = Body(..., embed=True)
-):
-    """Generate recommendations for a specific document."""
-    if document_id not in analysis_store:
-        raise HTTPException(status_code=404, detail="Analysis not found for document")
-
-    analysis = analysis_store[document_id]
-
-    # Get framework
-    if not framework_store:
-        raise HTTPException(status_code=400, detail="No strategic framework available")
-    framework = list(framework_store.values())[0]
-
-    try:
-        if USE_MOCK:
-            client = MockRecommendationClient()
-        else:
-            client = ClaudeClient(api_key=api_key)
-
-        engine = GoalRecommendationEngine(claude_client=client)
-        recommendations = engine.generate_recommendations(framework, analysis, analysis)
-
-        # Store recommendations for export
-        recommendation_store[document_id] = recommendations
-
-        return recommendations
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 # Store for portfolio recommendations
 portfolio_recommendations_store = {}
 
 
+# IMPORTANT: Portfolio routes must come BEFORE the {document_id} route
+# to prevent FastAPI from matching "portfolio" as a document_id
 @router.post("/recommendations/portfolio")
 async def generate_portfolio_recommendations(
     api_key: str = Body(..., embed=True)
@@ -379,6 +347,40 @@ async def get_portfolio_recommendations():
     if 'latest' not in portfolio_recommendations_store:
         raise HTTPException(status_code=404, detail="No portfolio recommendations generated yet")
     return portfolio_recommendations_store['latest']
+
+
+@router.post("/recommendations/{document_id}")
+async def generate_recommendations(
+    document_id: str,
+    api_key: str = Body(..., embed=True)
+):
+    """Generate recommendations for a specific document."""
+    if document_id not in analysis_store:
+        raise HTTPException(status_code=404, detail="Analysis not found for document")
+
+    analysis = analysis_store[document_id]
+
+    # Get framework
+    if not framework_store:
+        raise HTTPException(status_code=400, detail="No strategic framework available")
+    framework = list(framework_store.values())[0]
+
+    try:
+        if USE_MOCK:
+            client = MockRecommendationClient()
+        else:
+            client = ClaudeClient(api_key=api_key)
+
+        engine = GoalRecommendationEngine(claude_client=client)
+        recommendations = engine.generate_recommendations(framework, analysis, analysis)
+
+        # Store recommendations for export
+        recommendation_store[document_id] = recommendations
+
+        return recommendations
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/framework")
