@@ -17,10 +17,12 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
     removeDocument,
     setCurrentStep,
     setProcessing,
+    setError,
   } = useAnalysis();
 
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const documents = category === 'strategy' ? strategyDocuments : goalDocuments;
   const addDocument = category === 'strategy' ? addStrategyDocument : addGoalDocument;
@@ -49,36 +51,73 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
       allowedExtensions.some(ext => f.name.toLowerCase().endsWith(ext))
     );
 
-    if (validFiles.length === 0) return;
+    if (validFiles.length === 0) {
+      setUploadError('Please upload PDF, DOCX, PPTX, or XLSX files.');
+      return;
+    }
 
     const remainingSlots = maxFiles - documents.length;
     const filesToProcess = validFiles.slice(0, remainingSlots);
 
     setUploading(true);
+    setUploadError(null);
 
     for (const file of filesToProcess) {
-      // Simulate document processing (in real app, this uploads to backend)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      try {
+        // Upload file to backend API
+        const formData = new FormData();
+        formData.append('file', file);
 
-      const mockDoc = {
-        documentId: `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        fileName: file.name,
-        documentType: category,
-        extractedText: `Sample extracted text from ${file.name}`,
-        structuredSections: [
-          { heading: 'Section 1', content: 'Content...', hierarchy: 1 }
-        ],
-        metadata: {
-          pageCount: Math.floor(Math.random() * 10) + 1,
-          wordCount: Math.floor(Math.random() * 5000) + 500,
-          extractionTimestamp: new Date().toISOString(),
-        },
-      };
+        const response = await fetch(`/api/upload/${category}`, {
+          method: 'POST',
+          body: formData,
+        });
 
-      addDocument(mockDoc as any);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.detail || `Failed to upload ${file.name}`);
+        }
+
+        const result = await response.json();
+
+        // Add the processed document to context
+        const processedDoc = {
+          documentId: result.documentId,
+          fileName: result.fileName,
+          documentType: category,
+          extractedText: '', // Full text stored in backend
+          structuredSections: [],
+          metadata: {
+            pageCount: result.pageCount || 1,
+            wordCount: result.wordCount || 0,
+            extractionTimestamp: new Date().toISOString(),
+            sections: result.sections || 0,
+          },
+        };
+
+        addDocument(processedDoc as any);
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : `Failed to upload ${file.name}`;
+        setUploadError(errorMessage);
+        console.error('Upload error:', error);
+      }
     }
 
     setUploading(false);
+  };
+
+  const handleRemoveDocument = async (docId: string) => {
+    try {
+      // Delete from backend
+      await fetch(`/api/documents/${docId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Failed to delete document from backend:', error);
+    }
+    // Remove from local state regardless
+    removeDocument(docId, category);
   };
 
   const handleNext = () => {
@@ -87,7 +126,6 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
     } else {
       setCurrentStep('processing');
       setProcessing(true, 'Starting analysis...');
-      // In real app, trigger actual processing
     }
   };
 
@@ -104,6 +142,13 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
         <h2 className="text-xl font-semibold text-slate-900 mb-2">{title}</h2>
         <p className="text-slate-500 mb-6">{description}</p>
+
+        {/* Upload Error */}
+        {uploadError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {uploadError}
+          </div>
+        )}
 
         {/* Drop Zone */}
         <div
@@ -135,7 +180,7 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
           >
             <UploadIcon className="w-12 h-12 text-slate-400 mx-auto mb-4" />
             <p className="text-slate-600 font-medium">
-              {uploading ? 'Processing...' : 'Drop files here or click to upload'}
+              {uploading ? 'Uploading and processing...' : 'Drop files here or click to upload'}
             </p>
             <p className="text-sm text-slate-400 mt-1">
               PDF, DOCX, PPTX, XLSX (max 25MB each)
@@ -169,7 +214,7 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
                     </div>
                   </div>
                   <button
-                    onClick={() => removeDocument(doc.documentId, category)}
+                    onClick={() => handleRemoveDocument(doc.documentId)}
                     className="p-1 text-slate-400 hover:text-red-500 transition-colors"
                   >
                     <XIcon className="w-4 h-4" />
