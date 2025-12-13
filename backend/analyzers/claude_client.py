@@ -537,6 +537,141 @@ Return ONLY valid JSON matching this structure:
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse recommendations as JSON: {str(e)}")
 
+    def generate_portfolio_recommendations(
+        self,
+        strategic_framework: Dict[str, Any],
+        all_analyses: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Generate portfolio-wide recommendations synthesizing themes across all employees.
+
+        Args:
+            strategic_framework: Structured strategic framework
+            all_analyses: List of all employee goal analyses
+
+        Returns:
+            Executive summary with key themes and systemic recommendations
+        """
+        import json
+
+        system_prompt = """You are a strategic OE (Organizational Effectiveness) consultant specializing in
+performance management and goal alignment. You analyze patterns across multiple employees' goals
+to identify systemic themes, gaps, and opportunities for organizational improvement.
+Your recommendations are executive-level, actionable, and grounded in the strategic framework.
+Always return valid JSON."""
+
+        # Summarize analyses for the prompt
+        analyses_summary = []
+        for analysis in all_analyses:
+            analyses_summary.append({
+                "employee": analysis.get("documentName", "Unknown"),
+                "role": analysis.get("employeeContext", {}).get("role", ""),
+                "alignmentScore": analysis.get("overallAlignmentScore", 0),
+                "impactScore": analysis.get("overallImpactScore", 0),
+                "quadrantDistribution": analysis.get("coherenceIndex", {}).get("quadrantDistribution", {}),
+                "gaps": analysis.get("strategicCoverage", {}),
+                "topGoals": [g.get("goal", "")[:100] for g in analysis.get("goals", [])[:3]]
+            })
+
+        prompt = f"""Analyze this portfolio of {len(all_analyses)} employees' goals and generate an executive summary
+with key themes and strategic recommendations for organizational improvement.
+
+STRATEGIC FRAMEWORK:
+{json.dumps(strategic_framework, indent=2)}
+
+EMPLOYEE ANALYSES SUMMARY:
+{json.dumps(analyses_summary, indent=2)}
+
+Provide:
+1. EXECUTIVE SUMMARY: 2-3 paragraph synthesis of the portfolio's strategic health
+2. KEY THEMES: 3-5 patterns observed across employees (both positive and concerning)
+3. STRATEGIC GAPS: Top 3-5 organizational blind spots where goals don't address strategy
+4. SYSTEMIC RECOMMENDATIONS: 4-6 organization-wide changes to improve goal quality
+5. PRIORITY ACTIONS: Top 3 immediate actions for leadership
+
+Return ONLY valid JSON matching this structure:
+{{
+    "executiveSummary": {{
+        "overallHealth": "string - one sentence verdict",
+        "narrative": "string - 2-3 paragraph detailed summary",
+        "portfolioScore": number (0-100)
+    }},
+    "keyThemes": [
+        {{
+            "themeId": "T1",
+            "title": "string",
+            "description": "string",
+            "frequency": "string - e.g., '75% of employees'",
+            "impact": "positive" | "neutral" | "negative",
+            "affectedPerspectives": ["financial", "customer", "process", "learning"]
+        }}
+    ],
+    "strategicGaps": [
+        {{
+            "gapId": "G1",
+            "title": "string",
+            "description": "string",
+            "affectedObjectives": ["F1", "C2"],
+            "severity": "critical" | "moderate" | "minor",
+            "businessRisk": "string"
+        }}
+    ],
+    "systemicRecommendations": [
+        {{
+            "recommendationId": "SR1",
+            "title": "string",
+            "description": "string",
+            "rationale": "string",
+            "targetAudience": "string - e.g., 'All managers', 'HR/Talent team'",
+            "expectedOutcome": "string",
+            "linkedGaps": ["G1", "G2"]
+        }}
+    ],
+    "priorityActions": [
+        {{
+            "actionId": "A1",
+            "action": "string",
+            "owner": "string - suggested owner role",
+            "timeframe": "string - e.g., 'Next 30 days'",
+            "expectedImpact": "string"
+        }}
+    ],
+    "metadata": {{
+        "employeesAnalyzed": number,
+        "averageAlignmentScore": number,
+        "averageImpactScore": number,
+        "generatedAt": "ISO timestamp"
+    }}
+}}"""
+
+        response = self.complete(prompt, system_prompt=system_prompt, max_tokens=8192)
+
+        try:
+            content = response.content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+
+            result = json.loads(content.strip())
+
+            # Add metadata if not present
+            if "metadata" not in result:
+                result["metadata"] = {}
+            result["metadata"]["employeesAnalyzed"] = len(all_analyses)
+            result["metadata"]["averageAlignmentScore"] = round(
+                sum(a.get("overallAlignmentScore", 0) for a in all_analyses) / max(len(all_analyses), 1), 1
+            )
+            result["metadata"]["averageImpactScore"] = round(
+                sum(a.get("overallImpactScore", 0) for a in all_analyses) / max(len(all_analyses), 1), 1
+            )
+
+            return result
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse portfolio recommendations as JSON: {str(e)}")
+
     def test_connection(self) -> bool:
         """
         Test the API connection with a simple request.

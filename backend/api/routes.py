@@ -337,6 +337,50 @@ async def generate_recommendations(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Store for portfolio recommendations
+portfolio_recommendations_store = {}
+
+
+@router.post("/recommendations/portfolio")
+async def generate_portfolio_recommendations(
+    api_key: str = Body(..., embed=True)
+):
+    """Generate portfolio-wide recommendations across all employees."""
+    if not analysis_store:
+        raise HTTPException(status_code=400, detail="No goal analyses available. Run goal analysis first.")
+
+    if not framework_store:
+        raise HTTPException(status_code=400, detail="No strategic framework available")
+
+    framework = list(framework_store.values())[0]
+    all_analyses = list(analysis_store.values())
+
+    try:
+        if USE_MOCK:
+            client = MockRecommendationClient()
+        else:
+            client = ClaudeClient(api_key=api_key)
+
+        # Generate portfolio recommendations
+        recommendations = client.generate_portfolio_recommendations(framework, all_analyses)
+
+        # Store for export
+        portfolio_recommendations_store['latest'] = recommendations
+
+        return recommendations
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/recommendations/portfolio")
+async def get_portfolio_recommendations():
+    """Get the latest portfolio recommendations."""
+    if 'latest' not in portfolio_recommendations_store:
+        raise HTTPException(status_code=404, detail="No portfolio recommendations generated yet")
+    return portfolio_recommendations_store['latest']
+
+
 @router.get("/framework")
 async def get_framework():
     """Get the current strategic framework."""
@@ -366,6 +410,7 @@ async def reset_all():
     framework_store.clear()
     analysis_store.clear()
     recommendation_store.clear()
+    portfolio_recommendations_store.clear()
     return {"reset": True}
 
 

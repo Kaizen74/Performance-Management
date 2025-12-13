@@ -151,12 +151,20 @@ export function StrategicFrameworkView() {
         >
           ← Back to Upload
         </button>
-        <button
-          onClick={() => setCurrentStep('dashboard')}
-          className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          View Alignment Dashboard →
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setCurrentStep('portfolioRecommendations')}
+            className="px-4 py-2 border border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
+          >
+            View Portfolio Recommendations
+          </button>
+          <button
+            onClick={() => setCurrentStep('dashboard')}
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            View Alignment Dashboard →
+          </button>
+        </div>
       </div>
     </div>
   );

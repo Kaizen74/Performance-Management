@@ -437,5 +437,162 @@ class MockRecommendationClient:
             "projectedNewImpactScore": min(100, alignment_analysis.get('overallImpactScore', 50) + 20)
         }
 
+    def generate_portfolio_recommendations(
+        self,
+        strategic_framework: Dict[str, Any],
+        all_analyses: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Return mock portfolio recommendations."""
+        from datetime import datetime
+
+        avg_alignment = sum(a.get('overallAlignmentScore', 50) for a in all_analyses) / max(len(all_analyses), 1)
+        avg_impact = sum(a.get('overallImpactScore', 50) for a in all_analyses) / max(len(all_analyses), 1)
+
+        return {
+            "executiveSummary": {
+                "overallHealth": f"Moderate strategic alignment with execution gaps across {len(all_analyses)} employees",
+                "narrative": f"""The portfolio analysis reveals a mixed picture of strategic alignment across the organization.
+While {len(all_analyses)} employees demonstrate understanding of operational objectives, there are significant gaps in
+connecting individual goals to the broader strategic framework. Approximately 60% of goals focus on internal process
+improvements, while customer-facing and financial objectives remain underrepresented.
+
+The most concerning pattern is the prevalence of activity-based goals rather than outcome-oriented objectives. Many employees
+have set goals around completing tasks or attending training rather than achieving measurable business results. This creates
+a "busy work trap" where effort is expended without strategic impact.
+
+Positively, there is strong alignment in operational efficiency initiatives, with multiple employees targeting process
+improvements that support the organization's cost reduction objectives. However, innovation and customer experience goals
+are notably absent from most individual goal sets.""",
+                "portfolioScore": round(avg_alignment * 0.6 + avg_impact * 0.4)
+            },
+            "keyThemes": [
+                {
+                    "themeId": "T1",
+                    "title": "Process-Heavy Goal Distribution",
+                    "description": "Goals disproportionately focus on internal processes over customer outcomes and financial results",
+                    "frequency": "75% of employees",
+                    "impact": "negative",
+                    "affectedPerspectives": ["customer", "financial"]
+                },
+                {
+                    "themeId": "T2",
+                    "title": "Strong Operational Efficiency Focus",
+                    "description": "Consistent emphasis on cost reduction and process improvement across teams",
+                    "frequency": "80% of employees",
+                    "impact": "positive",
+                    "affectedPerspectives": ["process", "financial"]
+                },
+                {
+                    "themeId": "T3",
+                    "title": "Activity vs Outcome Orientation",
+                    "description": "Many goals describe activities rather than measurable outcomes",
+                    "frequency": "60% of employees",
+                    "impact": "negative",
+                    "affectedPerspectives": ["financial", "customer", "process", "learning"]
+                },
+                {
+                    "themeId": "T4",
+                    "title": "Learning Goals Underrepresented",
+                    "description": "Capability building and skill development goals are minimal",
+                    "frequency": "40% of employees",
+                    "impact": "negative",
+                    "affectedPerspectives": ["learning"]
+                }
+            ],
+            "strategicGaps": [
+                {
+                    "gapId": "G1",
+                    "title": "Customer Experience Blind Spot",
+                    "description": "Few goals directly address customer satisfaction, NPS, or service quality improvements",
+                    "affectedObjectives": ["C1", "C2", "C3"],
+                    "severity": "critical",
+                    "businessRisk": "May miss market shifts and lose competitive advantage in customer service"
+                },
+                {
+                    "gapId": "G2",
+                    "title": "Innovation Deficit",
+                    "description": "No goals target new product development, digital transformation, or market expansion",
+                    "affectedObjectives": ["F1", "C1"],
+                    "severity": "critical",
+                    "businessRisk": "Risk of commoditization and inability to capture growth opportunities"
+                },
+                {
+                    "gapId": "G3",
+                    "title": "Capability Development Lag",
+                    "description": "Insufficient focus on skill building, succession planning, and knowledge management",
+                    "affectedObjectives": ["L1", "L2", "L3"],
+                    "severity": "moderate",
+                    "businessRisk": "May create talent gaps and limit organizational adaptability"
+                }
+            ],
+            "systemicRecommendations": [
+                {
+                    "recommendationId": "SR1",
+                    "title": "Implement Balanced Scorecard Goal Requirements",
+                    "description": "Require each employee to have at least one goal in each BSC perspective",
+                    "rationale": "Ensures comprehensive coverage of strategic objectives across the portfolio",
+                    "targetAudience": "HR/Talent team and all managers",
+                    "expectedOutcome": "25% improvement in strategic coverage within one goal cycle",
+                    "linkedGaps": ["G1", "G3"]
+                },
+                {
+                    "recommendationId": "SR2",
+                    "title": "Shift to OKR Framework",
+                    "description": "Transition from activity-based goals to Objectives and Key Results format",
+                    "rationale": "OKRs naturally emphasize outcomes over activities and improve measurability",
+                    "targetAudience": "All employees with manager training first",
+                    "expectedOutcome": "40% increase in outcome-oriented goals",
+                    "linkedGaps": ["G1", "G2"]
+                },
+                {
+                    "recommendationId": "SR3",
+                    "title": "Introduce Customer Impact Requirements",
+                    "description": "Mandate that 20% of each team's goals directly impact customer metrics",
+                    "rationale": "Addresses the critical gap in customer-facing objectives",
+                    "targetAudience": "Department heads and team leads",
+                    "expectedOutcome": "Improved NPS and customer retention within 6 months",
+                    "linkedGaps": ["G1"]
+                },
+                {
+                    "recommendationId": "SR4",
+                    "title": "Establish Goal Quality Review Process",
+                    "description": "Implement peer review of goals against strategic alignment criteria before finalization",
+                    "rationale": "Catches misalignment early and promotes learning across teams",
+                    "targetAudience": "All managers",
+                    "expectedOutcome": "15-20% improvement in average alignment scores",
+                    "linkedGaps": ["G1", "G2", "G3"]
+                }
+            ],
+            "priorityActions": [
+                {
+                    "actionId": "A1",
+                    "action": "Conduct goal-setting workshop focused on customer impact and measurable outcomes",
+                    "owner": "HR/OD Lead",
+                    "timeframe": "Next 30 days",
+                    "expectedImpact": "Immediate improvement in goal quality for upcoming cycle"
+                },
+                {
+                    "actionId": "A2",
+                    "action": "Review and revise the bottom 20% of employees' goals with their managers",
+                    "owner": "Department Heads",
+                    "timeframe": "Next 14 days",
+                    "expectedImpact": "Quick wins in strategic alignment for at-risk goal sets"
+                },
+                {
+                    "actionId": "A3",
+                    "action": "Develop goal templates with built-in strategic linkage requirements",
+                    "owner": "HR Systems/Talent Team",
+                    "timeframe": "Next 45 days",
+                    "expectedImpact": "Structural improvement in goal quality for all future submissions"
+                }
+            ],
+            "metadata": {
+                "employeesAnalyzed": len(all_analyses),
+                "averageAlignmentScore": round(avg_alignment, 1),
+                "averageImpactScore": round(avg_impact, 1),
+                "generatedAt": datetime.utcnow().isoformat() + "Z"
+            }
+        }
+
     def test_connection(self) -> bool:
         return True

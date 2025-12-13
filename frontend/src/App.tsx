@@ -7,6 +7,7 @@ import { StrategicFrameworkView } from './components/StrategicFrameworkView';
 import { AlignmentDashboard } from './components/AlignmentDashboard';
 import { DocumentScorecard } from './components/DocumentScorecard';
 import { RecommendationsPanel } from './components/RecommendationsPanel';
+import { PortfolioRecommendationsPanel } from './components/PortfolioRecommendationsPanel';
 import { ExportPanel } from './components/ExportPanel';
 
 function AppContent() {
@@ -60,6 +61,7 @@ function AppContent() {
         {currentStep === 'uploadGoals' && <GoalsTableUploader />}
         {currentStep === 'processing' && <AnalysisProgress />}
         {currentStep === 'framework' && <StrategicFrameworkView />}
+        {currentStep === 'portfolioRecommendations' && <PortfolioRecommendationsPanel />}
         {currentStep === 'dashboard' && <AlignmentDashboard />}
         {currentStep === 'documentDetail' && <DocumentScorecard />}
         {currentStep === 'recommendations' && <RecommendationsPanel />}

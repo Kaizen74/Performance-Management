@@ -202,6 +202,7 @@ export type AnalysisStep =
   | 'uploadGoals'
   | 'processing'
   | 'framework'
+  | 'portfolioRecommendations'
   | 'dashboard'
   | 'documentDetail'
   | 'recommendations'
