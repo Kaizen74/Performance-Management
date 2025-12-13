@@ -45,6 +45,9 @@ export function PortfolioRanking({ documents, onSelectDocument }: PortfolioRanki
       <div className="space-y-3">
         {sortedDocuments.map((doc, index) => {
           const tier = calculateTier(doc.overallAlignmentScore, doc.overallImpactScore);
+          const jobTitle = doc.employeeContext?.jobTitle;
+          const department = doc.employeeContext?.department;
+          const seniority = doc.employeeContext?.seniorityLevel;
 
           return (
             <div
@@ -64,9 +67,18 @@ export function PortfolioRanking({ documents, onSelectDocument }: PortfolioRanki
                   {index + 1}
                 </div>
                 <div>
-                  <p className="font-medium text-slate-900">{doc.fileName}</p>
-                  <p className="text-sm text-slate-500">
-                    {doc.goals.length} goals analyzed
+                  <p className="font-medium text-slate-900">
+                    {doc.employeeContext?.employeeName || doc.fileName}
+                  </p>
+                  {jobTitle && (
+                    <p className="text-sm text-slate-700">{jobTitle}</p>
+                  )}
+                  <p className="text-xs text-slate-500">
+                    {department && <span>{department}</span>}
+                    {department && seniority && <span> · </span>}
+                    {seniority && <span className="capitalize">{seniority}</span>}
+                    {(department || seniority) && <span> · </span>}
+                    <span>{doc.goals.length} goals</span>
                   </p>
                 </div>
               </div>
