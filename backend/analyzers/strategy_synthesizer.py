@@ -372,54 +372,64 @@ class MockClaudeClient:
         """Extract vision statement from document text."""
         import re
 
-        # First try to find explicit vision section/statement
         lines = text.split('\n')
 
-        # Look for "Vision Statement" as a header followed by the actual vision
+        # Look for "Vision Statement" or "Vision" as a header followed by the actual vision
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Check if this line is a vision header
-            if ('vision' in line_lower and
-                ('statement' in line_lower or len(line_clean) < 30) and
-                'mission' not in line_lower):
-                # Look at the next few lines for the actual vision text
-                for j in range(i + 1, min(i + 5, len(lines))):
-                    next_line = lines[j].strip()
-                    # Skip empty lines and short lines
-                    if len(next_line) > 30 and not next_line.lower().startswith(('our', 'the', 'vision')):
-                        # This is likely the vision statement
-                        if next_line[0].isupper() or next_line.startswith('"'):
-                            # Clean up quotes if present
-                            vision = next_line.strip('"\'')
-                            if len(vision) > 30:
-                                return vision
-                    elif len(next_line) > 30 and next_line[0].isupper():
-                        return next_line.strip('"\'')
+            # Check if this line is a vision header (short line containing "vision")
+            is_vision_header = (
+                'vision' in line_lower and
+                'mission' not in line_lower and
+                len(line_clean) < 50 and
+                (line_clean.endswith(':') or
+                 'statement' in line_lower or
+                 line_clean.lower().strip(':').strip() in ['vision', 'our vision', 'vision statement', 'company vision'])
+            )
 
-        # Look for pattern "Vision:" or "Our Vision:" followed by text
+            if is_vision_header:
+                # Look at the next few lines for the actual vision text
+                for j in range(i + 1, min(i + 6, len(lines))):
+                    next_line = lines[j].strip()
+                    # Skip empty lines
+                    if not next_line:
+                        continue
+                    # Found a substantive line - this is likely the vision statement
+                    if len(next_line) > 25:
+                        vision = next_line.strip('"\'')
+                        # Make sure it's not another header
+                        if not (next_line.lower().endswith(':') and len(next_line) < 30):
+                            return vision
+                    # Even shorter lines might be the vision if they look complete
+                    elif len(next_line) > 15 and next_line[0].isupper():
+                        # Check if it looks like a complete statement
+                        if '.' in next_line or ',' in next_line or next_line.endswith('"'):
+                            return next_line.strip('"\'')
+
+        # Look for pattern "Vision:" followed by text on same line or next line
         patterns = [
-            r'vision statement[:\s]*[\n\r]+([^\n]{30,300})',
-            r'our vision[:\s]*[\n\r]+([^\n]{30,300})',
-            r'vision[:\s]+["\'"]?([^"\'\n]{30,300})["\'"]?',
-            r'vision[:\s]*[\n\r]+([^\n]{30,300})',
+            r'vision statement[:\s]*[\n\r]+\s*([^\n]{25,300})',
+            r'our vision[:\s]*[\n\r]+\s*([^\n]{25,300})',
+            r'vision[:\s]+["\'"]?([^"\'\n]{25,300})["\'"]?',
+            r'vision[:\s]*[\n\r]+\s*([^\n]{25,300})',
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, text.lower())
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                start, end = match.span(1)
-                vision = text[start:end].strip()
+                vision = match.group(1).strip()
                 vision = re.sub(r'^[:\s\-"\']+', '', vision)
                 vision = re.sub(r'["\'\s]+$', '', vision)
-                if len(vision) > 30:
+                if len(vision) > 25:
                     return vision
 
-        # Look for sentences that look like vision statements
+        # Look for sentences that look like vision statements by content
         vision_indicators = [
             "world's leading", "leading provider", "to be the", "become the",
-            "recognized as", "premier", "best-in-class", "global leader"
+            "recognized as", "premier", "best-in-class", "global leader",
+            "leading aviation", "service excellence"
         ]
 
         for line in lines:
@@ -514,55 +524,78 @@ class MockClaudeClient:
 
         # Look for explicit values section - "Our Values", "Core Values", "People Values", etc.
         in_values_section = False
-        values_section_lines = 0
+        values_section_start = -1
 
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Detect start of values section
-            if (('value' in line_lower and len(line_clean) < 50) or
+            # Detect start of values section (header line)
+            is_values_header = (
+                ('values' in line_lower and len(line_clean) < 60) or
                 'core values' in line_lower or
                 'our values' in line_lower or
                 'people values' in line_lower or
                 'company values' in line_lower or
-                'organizational values' in line_lower):
+                'organizational values' in line_lower
+            )
+
+            if is_values_header and not in_values_section:
                 in_values_section = True
-                values_section_lines = 0
+                values_section_start = i
                 continue
 
             if in_values_section:
-                values_section_lines += 1
+                lines_since_start = i - values_section_start
 
-                # Check for bullet points, circles, or value names
-                clean_line = re.sub(r'^[\s\-•*\d.○◯●]+', '', line_clean).strip()
+                # Skip empty lines
+                if not line_clean:
+                    # Exit if we've found values and hit a blank line after several lines
+                    if values and lines_since_start > 3:
+                        break
+                    continue
 
-                # Remove explanatory text after value name
+                # Check for bullet points, circles, numbers, or plain text values
+                clean_line = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', line_clean).strip()
+
+                # Remove explanatory text after value name (after colon, dash, etc.)
+                value_name = clean_line
                 if ':' in clean_line:
-                    clean_line = clean_line.split(':')[0].strip()
-                if ' - ' in clean_line:
-                    clean_line = clean_line.split(' - ')[0].strip()
-                if '–' in clean_line:
-                    clean_line = clean_line.split('–')[0].strip()
+                    value_name = clean_line.split(':')[0].strip()
+                if ' - ' in value_name:
+                    value_name = value_name.split(' - ')[0].strip()
+                if '–' in value_name:
+                    value_name = value_name.split('–')[0].strip()
+                if ' – ' in value_name:
+                    value_name = value_name.split(' – ')[0].strip()
 
-                # Check if this looks like a value name (short, capitalized)
-                if clean_line and 2 < len(clean_line) < 40:
-                    # Check if it's a known value or looks like a value name
-                    clean_lower = clean_line.lower()
-                    is_known_value = any(val in clean_lower for val in common_values)
-                    is_capitalized = clean_line[0].isupper()
-                    is_short_phrase = len(clean_line.split()) <= 3
+                # Check if this looks like a value name
+                if value_name and 2 < len(value_name) < 50:
+                    value_lower = value_name.lower()
 
-                    if (is_known_value or (is_capitalized and is_short_phrase)):
-                        if clean_line.lower() not in [v.lower() for v in values]:
-                            values.append(clean_line.title())
+                    # Check if it matches known values
+                    is_known_value = any(val == value_lower or val in value_lower for val in common_values)
 
-                # Exit section after finding several values or hitting empty line/new section
-                if len(line_clean) == 0 and values_section_lines > 2:
-                    if values:  # Only exit if we found some values
-                        in_values_section = False
-                if values_section_lines > 15:
-                    in_values_section = False
+                    # Or check if it looks like a value name (capitalized, short phrase)
+                    is_capitalized = value_name[0].isupper()
+                    word_count = len(value_name.split())
+                    is_short_phrase = word_count <= 4
+
+                    # Accept if known value or looks like a value name
+                    if is_known_value or (is_capitalized and is_short_phrase and word_count >= 1):
+                        # Avoid duplicates and exclude things that look like headers
+                        if (value_name.lower() not in [v.lower() for v in values] and
+                            not value_name.lower().endswith('values') and
+                            not value_name.lower().startswith('sats')):
+                            values.append(value_name)
+
+                # Detect end of values section (new section header or too many lines)
+                if lines_since_start > 20:
+                    break
+                # Check if this line looks like a new section header
+                if (line_clean.endswith(':') and len(line_clean) < 40 and
+                    'value' not in line_lower and lines_since_start > 2):
+                    break
 
         # If no explicit values section found, look for value mentions in context
         if not values:
@@ -570,11 +603,11 @@ class MockClaudeClient:
                 if value in text_lower:
                     # Check if it's mentioned in a values context
                     value_patterns = [
-                        rf'value[s]?[:\s].*{value}',
-                        rf'{value}.*value',
-                        rf'core.*{value}',
-                        rf'we (?:value|believe in).*{value}',
-                        rf'our {value}',
+                        rf'value[s]?[:\s].*\b{value}\b',
+                        rf'\b{value}\b.*value',
+                        rf'core.*\b{value}\b',
+                        rf'we (?:value|believe in).*\b{value}\b',
+                        rf'our \b{value}\b',
                     ]
                     for pattern in value_patterns:
                         if re.search(pattern, text_lower):
