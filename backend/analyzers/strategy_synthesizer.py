@@ -372,82 +372,124 @@ class MockClaudeClient:
         """Extract vision statement from document text."""
         import re
 
-        text_lower = text.lower()
+        # First try to find explicit vision section/statement
+        lines = text.split('\n')
 
-        # Look for explicit vision statement patterns
+        # Look for "Vision Statement" as a header followed by the actual vision
+        for i, line in enumerate(lines):
+            line_clean = line.strip()
+            line_lower = line_clean.lower()
+
+            # Check if this line is a vision header
+            if ('vision' in line_lower and
+                ('statement' in line_lower or len(line_clean) < 30) and
+                'mission' not in line_lower):
+                # Look at the next few lines for the actual vision text
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    next_line = lines[j].strip()
+                    # Skip empty lines and short lines
+                    if len(next_line) > 30 and not next_line.lower().startswith(('our', 'the', 'vision')):
+                        # This is likely the vision statement
+                        if next_line[0].isupper() or next_line.startswith('"'):
+                            # Clean up quotes if present
+                            vision = next_line.strip('"\'')
+                            if len(vision) > 30:
+                                return vision
+                    elif len(next_line) > 30 and next_line[0].isupper():
+                        return next_line.strip('"\'')
+
+        # Look for pattern "Vision:" or "Our Vision:" followed by text
         patterns = [
-            r'vision[:\s]*["\']?([^"\'\n.]{20,200})["\']?',
-            r'our vision[:\s]+([^\n.]{20,200})',
-            r'vision statement[:\s]+([^\n.]{20,200})',
-            r'we envision[:\s]+([^\n.]{20,200})',
-            r'to be[:\s]+([^\n.]{20,150})',
+            r'vision statement[:\s]*[\n\r]+([^\n]{30,300})',
+            r'our vision[:\s]*[\n\r]+([^\n]{30,300})',
+            r'vision[:\s]+["\'"]?([^"\'\n]{30,300})["\'"]?',
+            r'vision[:\s]*[\n\r]+([^\n]{30,300})',
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, text_lower)
+            match = re.search(pattern, text.lower())
             if match:
-                # Get the actual case from original text
                 start, end = match.span(1)
-                # Find corresponding position in original text
                 vision = text[start:end].strip()
-                # Clean up
                 vision = re.sub(r'^[:\s\-"\']+', '', vision)
                 vision = re.sub(r'["\'\s]+$', '', vision)
-                if len(vision) > 20:
-                    return vision.capitalize() if not vision[0].isupper() else vision
+                if len(vision) > 30:
+                    return vision
 
-        # Look for section-based extraction
-        lines = text.split('\n')
-        in_vision_section = False
-        for i, line in enumerate(lines):
-            if 'vision' in line.lower() and len(line) < 50:
-                in_vision_section = True
-                continue
-            if in_vision_section and len(line.strip()) > 20:
-                return line.strip()
-            if in_vision_section and i > 0:
-                in_vision_section = False
+        # Look for sentences that look like vision statements
+        vision_indicators = [
+            "world's leading", "leading provider", "to be the", "become the",
+            "recognized as", "premier", "best-in-class", "global leader"
+        ]
+
+        for line in lines:
+            line_clean = line.strip()
+            if len(line_clean) > 30 and len(line_clean) < 250:
+                line_lower = line_clean.lower()
+                for indicator in vision_indicators:
+                    if indicator in line_lower:
+                        return line_clean.strip('"\'')
 
         return "Vision not explicitly stated in uploaded documents"
 
     def _extract_mission(self, text: str) -> str:
-        """Extract mission statement from document text."""
+        """Extract mission/purpose statement from document text."""
         import re
 
-        text_lower = text.lower()
+        lines = text.split('\n')
 
-        # Look for explicit mission statement patterns
+        # Look for "Purpose Statement" or "Mission Statement" as a header
+        for i, line in enumerate(lines):
+            line_clean = line.strip()
+            line_lower = line_clean.lower()
+
+            # Check if this line is a mission/purpose header
+            if (('mission' in line_lower or 'purpose' in line_lower) and
+                ('statement' in line_lower or len(line_clean) < 30)):
+                # Look at the next few lines for the actual statement
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    next_line = lines[j].strip()
+                    if len(next_line) > 20:
+                        # This is likely the mission/purpose statement
+                        mission = next_line.strip('"\'')
+                        if len(mission) > 20:
+                            return mission
+
+        # Look for explicit patterns
         patterns = [
-            r'mission[:\s]*["\']?([^"\'\n.]{20,300})["\']?',
-            r'our mission[:\s]+([^\n.]{20,300})',
-            r'mission statement[:\s]+([^\n.]{20,300})',
-            r'we exist to[:\s]+([^\n.]{20,200})',
-            r'our purpose[:\s]+([^\n.]{20,200})',
+            r'purpose statement[:\s]*[\n\r]+([^\n]{20,300})',
+            r'our purpose[:\s]*[\n\r]+([^\n]{20,300})',
+            r'mission statement[:\s]*[\n\r]+([^\n]{20,300})',
+            r'our mission[:\s]*[\n\r]+([^\n]{20,300})',
+            r'purpose[:\s]+["\'"]?([^"\'\n]{20,300})["\'"]?',
+            r'mission[:\s]+["\'"]?([^"\'\n]{20,300})["\'"]?',
         ]
 
         for pattern in patterns:
-            match = re.search(pattern, text_lower)
+            match = re.search(pattern, text.lower())
             if match:
                 start, end = match.span(1)
                 mission = text[start:end].strip()
                 mission = re.sub(r'^[:\s\-"\']+', '', mission)
                 mission = re.sub(r'["\'\s]+$', '', mission)
                 if len(mission) > 20:
-                    return mission.capitalize() if not mission[0].isupper() else mission
+                    return mission
 
-        # Look for section-based extraction
-        lines = text.split('\n')
-        in_mission_section = False
-        for i, line in enumerate(lines):
-            if 'mission' in line.lower() and len(line) < 50:
-                in_mission_section = True
-                continue
-            if in_mission_section and len(line.strip()) > 20:
-                return line.strip()
-            if in_mission_section and i > 0:
-                in_mission_section = False
+        # Look for mission-like phrases
+        mission_indicators = [
+            "powering", "enabling", "delivering", "connecting",
+            "we exist to", "our purpose is", "we are committed to"
+        ]
 
-        return "Mission not explicitly stated in uploaded documents"
+        for line in lines:
+            line_clean = line.strip()
+            if len(line_clean) > 20 and len(line_clean) < 200:
+                line_lower = line_clean.lower()
+                for indicator in mission_indicators:
+                    if line_lower.startswith(indicator) or indicator in line_lower:
+                        return line_clean.strip('"\'')
+
+        return "Mission/Purpose not explicitly stated in uploaded documents"
 
     def _extract_values(self, text: str) -> List[str]:
         """Extract organizational values from document text."""
@@ -455,69 +497,98 @@ class MockClaudeClient:
 
         values = []
         text_lower = text.lower()
+        lines = text.split('\n')
 
-        # Common corporate values to look for
+        # Common corporate values - expanded list including SATS values
         common_values = [
-            'integrity', 'innovation', 'excellence', 'collaboration', 'respect',
-            'accountability', 'transparency', 'sustainability', 'customer focus',
-            'teamwork', 'quality', 'safety', 'diversity', 'inclusion', 'trust',
-            'agility', 'passion', 'empowerment', 'leadership', 'commitment',
-            'responsibility', 'ethics', 'professionalism', 'continuous improvement'
+            # SATS specific values
+            'safety', 'customer focus', 'respect', 'excellence', 'teamwork',
+            # General corporate values
+            'integrity', 'innovation', 'collaboration', 'accountability',
+            'transparency', 'sustainability', 'quality', 'diversity',
+            'inclusion', 'trust', 'agility', 'passion', 'empowerment',
+            'leadership', 'commitment', 'responsibility', 'ethics',
+            'professionalism', 'continuous improvement', 'service excellence',
+            'people', 'performance', 'growth', 'caring'
         ]
 
-        # Check which values appear in the text
-        for value in common_values:
-            if value in text_lower:
-                # Check if it's mentioned as a value (not just any mention)
-                value_patterns = [
-                    rf'value[s]?[:\s].*{value}',
-                    rf'{value}.*value',
-                    rf'core.*{value}',
-                    rf'{value}.*core',
-                    rf'we believe in.*{value}',
-                    rf'our {value}',
-                ]
-                for pattern in value_patterns:
-                    if re.search(pattern, text_lower):
-                        values.append(value.title())
-                        break
-
-        # Look for explicit values section
-        lines = text.split('\n')
+        # Look for explicit values section - "Our Values", "Core Values", "People Values", etc.
         in_values_section = False
         values_section_lines = 0
-        for line in lines:
-            line_lower = line.lower().strip()
+
+        for i, line in enumerate(lines):
+            line_clean = line.strip()
+            line_lower = line_clean.lower()
+
             # Detect start of values section
-            if (('value' in line_lower and 'core' in line_lower) or
-                line_lower.startswith('our values') or
-                line_lower.startswith('core values')):
+            if (('value' in line_lower and len(line_clean) < 50) or
+                'core values' in line_lower or
+                'our values' in line_lower or
+                'people values' in line_lower or
+                'company values' in line_lower or
+                'organizational values' in line_lower):
                 in_values_section = True
                 values_section_lines = 0
                 continue
+
             if in_values_section:
                 values_section_lines += 1
-                # Check for bullet points or numbered items - extract just the value name
-                clean_line = re.sub(r'^[\s\-•*\d.]+', '', line).strip()
-                # Only get the value name (before any colon or dash explanation)
+
+                # Check for bullet points, circles, or value names
+                clean_line = re.sub(r'^[\s\-•*\d.○◯●]+', '', line_clean).strip()
+
+                # Remove explanatory text after value name
                 if ':' in clean_line:
                     clean_line = clean_line.split(':')[0].strip()
                 if ' - ' in clean_line:
                     clean_line = clean_line.split(' - ')[0].strip()
-                # Only accept short value names (not full sentences)
-                if clean_line and len(clean_line) < 30 and len(clean_line) > 2:
-                    if clean_line.lower() not in [v.lower() for v in values]:
-                        values.append(clean_line.title())
-                # Exit section after 10 lines or empty line
-                if len(line.strip()) == 0 or values_section_lines > 10:
+                if '–' in clean_line:
+                    clean_line = clean_line.split('–')[0].strip()
+
+                # Check if this looks like a value name (short, capitalized)
+                if clean_line and 2 < len(clean_line) < 40:
+                    # Check if it's a known value or looks like a value name
+                    clean_lower = clean_line.lower()
+                    is_known_value = any(val in clean_lower for val in common_values)
+                    is_capitalized = clean_line[0].isupper()
+                    is_short_phrase = len(clean_line.split()) <= 3
+
+                    if (is_known_value or (is_capitalized and is_short_phrase)):
+                        if clean_line.lower() not in [v.lower() for v in values]:
+                            values.append(clean_line.title())
+
+                # Exit section after finding several values or hitting empty line/new section
+                if len(line_clean) == 0 and values_section_lines > 2:
+                    if values:  # Only exit if we found some values
+                        in_values_section = False
+                if values_section_lines > 15:
                     in_values_section = False
+
+        # If no explicit values section found, look for value mentions in context
+        if not values:
+            for value in common_values:
+                if value in text_lower:
+                    # Check if it's mentioned in a values context
+                    value_patterns = [
+                        rf'value[s]?[:\s].*{value}',
+                        rf'{value}.*value',
+                        rf'core.*{value}',
+                        rf'we (?:value|believe in).*{value}',
+                        rf'our {value}',
+                    ]
+                    for pattern in value_patterns:
+                        if re.search(pattern, text_lower):
+                            if value.title() not in values:
+                                values.append(value.title())
+                            break
 
         # Remove duplicates while preserving order
         seen = set()
         unique_values = []
         for v in values:
-            if v.lower() not in seen:
-                seen.add(v.lower())
+            v_lower = v.lower()
+            if v_lower not in seen:
+                seen.add(v_lower)
                 unique_values.append(v)
 
         if not unique_values:
