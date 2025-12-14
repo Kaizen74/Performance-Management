@@ -255,8 +255,8 @@ class ExcelExportEngine:
                 ws.cell(row=row_idx, column=5, value="ERROR")
                 continue
 
-            # Employee metadata
-            metadata = result.get('employeeMetadata', {})
+            # Employee metadata - check both 'employeeContext' (analysis) and 'employeeMetadata' (document)
+            metadata = result.get('employeeContext', {}) or result.get('employeeMetadata', {})
             ws.cell(row=row_idx, column=1, value=metadata.get('employeeName', result.get('fileName', 'Unknown')))
             ws.cell(row=row_idx, column=2, value=metadata.get('jobTitle', 'N/A'))
             ws.cell(row=row_idx, column=3, value=metadata.get('department', 'N/A'))
@@ -364,7 +364,7 @@ class ExcelExportEngine:
         ws.cell(row=3, column=2).fill = header_fill
 
         for col, result in enumerate(self.results, 3):
-            metadata = result.get('employeeMetadata', {})
+            metadata = result.get('employeeContext', {}) or result.get('employeeMetadata', {})
             name = metadata.get('employeeName', result.get('fileName', f'Doc {col-2}'))
             cell = ws.cell(row=3, column=col, value=name[:15])
             cell.font = header_font
@@ -433,7 +433,7 @@ class ExcelExportEngine:
 
             doc_id = result.get('documentId', '')
             doc_recs = self.recommendations.get(doc_id, {}).get('recommendations', [])
-            metadata = result.get('employeeMetadata', {})
+            metadata = result.get('employeeContext', {}) or result.get('employeeMetadata', {})
             employee_name = metadata.get('employeeName', result.get('fileName', 'Unknown'))
             current_score = result.get('overallAlignmentScore', 0)
 
@@ -570,7 +570,7 @@ class ExcelExportEngine:
         for level in levels:
             level_results = [
                 r for r in self.results
-                if r.get('employeeMetadata', {}).get('seniorityLevel', '').lower() == level
+                if (r.get('employeeContext', {}) or r.get('employeeMetadata', {})).get('seniorityLevel', '').lower() == level
                 and 'error' not in r
             ]
 
@@ -650,7 +650,7 @@ class ExcelExportEngine:
                 for result in self.results:
                     if 'error' in result:
                         continue
-                    metadata = result.get('employeeMetadata', {})
+                    metadata = result.get('employeeContext', {}) or result.get('employeeMetadata', {})
                     employee_name = metadata.get('employeeName', result.get('fileName', 'Unknown'))
 
                     for goal in result.get('goals', []):

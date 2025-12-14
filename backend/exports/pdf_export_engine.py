@@ -327,7 +327,7 @@ class PDFExportEngine:
             if 'error' in result:
                 continue
 
-            metadata = result.get('employeeMetadata', {})
+            metadata = result.get('employeeContext', {}) or result.get('employeeMetadata', {})
             name = metadata.get('employeeName', result.get('fileName', 'Unknown'))[:25]
             alignment = result.get('overallAlignmentScore', 0)
             impact = result.get('overallImpactScore', 0)
@@ -410,7 +410,7 @@ class PDFExportEngine:
             if not doc_recs:
                 continue
 
-            metadata = result.get('employeeMetadata', {})
+            metadata = result.get('employeeContext', {}) or result.get('employeeMetadata', {})
             name = metadata.get('employeeName', result.get('fileName', 'Unknown'))
 
             elements.append(Paragraph(f"<b>{name}</b>", self.styles['SubSection']))
