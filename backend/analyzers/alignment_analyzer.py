@@ -880,9 +880,67 @@ class MockAlignmentClient:
                 }
             }
 
+            # Update alignment rationale to reflect actual classification
+            goal['alignmentRationale'] = self._generate_quadrant_rationale(
+                goal_text=goal.get('goalText', ''),
+                quadrant=quadrant,
+                is_aligned=is_aligned,
+                is_outcome=is_outcome,
+                aligned_themes=aligned_themes,
+                alignment_evidence=alignment_evidence,
+                linked_objectives=goal.get('linkedObjectives', []),
+                alignment_score=goal.get('alignmentScore', 50)
+            )
+
             classified_goals.append(goal)
 
         return classified_goals
+
+    def _generate_quadrant_rationale(
+        self,
+        goal_text: str,
+        quadrant: str,
+        is_aligned: bool,
+        is_outcome: bool,
+        aligned_themes: List[str],
+        alignment_evidence: List[str],
+        linked_objectives: List[str],
+        alignment_score: int
+    ) -> str:
+        """Generate alignment rationale that accurately reflects the quadrant classification."""
+        obj_str = ", ".join(linked_objectives) if linked_objectives else "none identified"
+        themes_str = ", ".join(aligned_themes) if aligned_themes else "none"
+        evidence_str = ", ".join(set(alignment_evidence[:3])) if alignment_evidence else "none"
+
+        if quadrant == "Strategic Driver":
+            return (
+                f"STRONG ALIGNMENT: This goal directly supports strategic objectives ({obj_str}) "
+                f"with clear outcome-oriented language. It connects to themes: {themes_str}. "
+                f"The measurable focus ensures accountability and progress tracking. "
+                f"Evidence of strategic linkage: {evidence_str}."
+            )
+        elif quadrant == "Busy Work Trap":
+            return (
+                f"PARTIAL ALIGNMENT: While this goal connects to strategic themes ({themes_str}) "
+                f"and objectives ({obj_str}), it describes activities/tasks rather than measurable outcomes. "
+                f"Consider reframing to specify WHAT result will be achieved, not just what will be done. "
+                f"Current form risks effort without demonstrable strategic impact."
+            )
+        elif quadrant == "Rogue Project":
+            return (
+                f"MISALIGNED INITIATIVE: Although this goal has measurable outcomes, it does not clearly "
+                f"connect to current strategic priorities. No strong alignment to strategic themes was found. "
+                f"Linked objectives ({obj_str}) appear loosely connected at best. "
+                f"Recommend revisiting to ensure effort advances organizational strategy, not personal interests."
+            )
+        else:  # Distraction
+            return (
+                f"WEAK ALIGNMENT: This goal lacks both strategic alignment AND measurable outcomes. "
+                f"It describes an activity ('{goal_text[:50]}...') without clear connection to "
+                f"organizational priorities or quantifiable results. No evidence of strategic linkage found. "
+                f"This type of goal risks consuming time without advancing the organization's mission. "
+                f"Strongly recommend revising to include specific outcomes tied to strategic objectives."
+            )
 
     def _calculate_coherence_index(
         self,
