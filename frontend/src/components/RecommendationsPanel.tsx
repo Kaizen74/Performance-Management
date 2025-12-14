@@ -223,18 +223,48 @@ export function RecommendationsPanel() {
       {/* Recommendations */}
       <div className="space-y-4">
         <h3 className="font-semibold text-slate-900">Recommended Goal Improvements</h3>
-        {recSet.recommendations.map((rec, index) => (
+        {recSet.recommendations.map((rec, index) => {
+          // Get classification color
+          const classificationColors: Record<string, string> = {
+            'Distraction': 'bg-rose-100 text-rose-700 border-rose-200',
+            'Busy Work Trap': 'bg-amber-100 text-amber-700 border-amber-200',
+            'Rogue Project': 'bg-orange-100 text-orange-700 border-orange-200',
+            'Strategic Driver': 'bg-teal-100 text-teal-700 border-teal-200',
+          };
+          const classificationColor = rec.originalClassification
+            ? classificationColors[rec.originalClassification]
+            : 'bg-slate-100 text-slate-700 border-slate-200';
+
+          return (
           <div
             key={rec.recommendationId}
             className="bg-white rounded-lg shadow-sm border border-slate-200 p-6"
             data-testid="recommendation-card"
           >
+            {/* Original Goal Section - shows what we're improving */}
+            {rec.originalGoal && (
+              <div className="mb-4 pb-4 border-b border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-slate-500">Original Goal Being Improved</p>
+                  {rec.originalClassification && (
+                    <span className={`px-2 py-1 rounded text-xs font-medium border ${classificationColor}`}>
+                      {rec.originalClassification}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-600 italic bg-slate-50 rounded p-3">
+                  "{rec.originalGoal}"
+                </p>
+              </div>
+            )}
+
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold">
                   {index + 1}
                 </div>
                 <div>
+                  <p className="text-xs text-teal-600 font-medium mb-1">Suggested Revision</p>
                   <h3 className="font-semibold text-slate-900">
                     {rec.revisedGoal.objective}
                   </h3>
@@ -310,7 +340,8 @@ export function RecommendationsPanel() {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Actions */}

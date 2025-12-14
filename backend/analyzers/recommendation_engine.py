@@ -316,6 +316,7 @@ class GoalRecommendationEngine:
 class MockRecommendationClient:
     """
     Mock client for testing recommendation generation without API calls.
+    Generates contextual recommendations based on actual employee goals.
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -327,115 +328,416 @@ class MockRecommendationClient:
         current_goals: str,
         alignment_analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Return mock recommendations."""
+        """Generate contextual recommendations based on actual employee goals."""
         current_score = alignment_analysis.get('overallAlignmentScore', 50)
+        current_impact = alignment_analysis.get('overallImpactScore', 50)
+        goals = alignment_analysis.get('goals', [])
+        employee_context = alignment_analysis.get('employeeContext', {})
+
+        # Extract strategic objectives from framework
+        objectives = strategic_framework.get('strategicObjectives', [])
+        obj_map = {obj.get('objectiveId', ''): obj for obj in objectives}
+
+        # Identify goals needing improvement (Distraction, Busy Work Trap, Rogue Project)
+        goals_to_improve = []
+        for goal in goals:
+            quadrant = goal.get('classification', {}).get('quadrant', '')
+            if quadrant in ['Distraction', 'Busy Work Trap', 'Rogue Project']:
+                goals_to_improve.append(goal)
+
+        # If no weak goals, use all goals sorted by alignment score
+        if not goals_to_improve:
+            goals_to_improve = sorted(
+                goals,
+                key=lambda g: g.get('alignmentScore', 0)
+            )[:5]
+
+        # Generate contextual recommendations
+        recommendations = []
+        for i, goal in enumerate(goals_to_improve[:5]):
+            rec = self._create_contextual_recommendation(
+                goal, i + 1, strategic_framework, employee_context
+            )
+            recommendations.append(rec)
+
+        # Calculate projected improvement
+        improvement_per_rec = 5 if recommendations else 0
+        projected_alignment = min(100, current_score + (len(recommendations) * improvement_per_rec))
+        projected_impact = min(100, current_impact + (len(recommendations) * 4))
 
         return {
-            "recommendations": [
-                {
-                    "recommendationId": "R1",
-                    "revisedGoal": {
-                        "objective": "Lead digital transformation initiative for warehouse operations",
-                        "keyResults": [
-                            "Deploy AI-powered inventory forecasting by Q2",
-                            "Achieve 25% reduction in stockouts",
-                            "Train 100% of warehouse staff on new system"
-                        ],
-                        "timeline": "Q2 2025",
-                        "metrics": ["System uptime", "Forecast accuracy", "Training completion rate"]
-                    },
-                    "strategicLinkages": ["P1", "L1", "C2"],
-                    "predictedAlignmentGain": 15,
-                    "evidence": {
-                        "source": "McKinsey Digital Operations Report 2024",
-                        "finding": "AI-driven forecasting reduces stockouts by 20-35%"
-                    },
-                    "implementationNotes": "Requires IT partnership and change management plan"
-                },
-                {
-                    "recommendationId": "R2",
-                    "revisedGoal": {
-                        "objective": "Implement sustainability metrics in operations",
-                        "keyResults": [
-                            "Reduce carbon emissions per shipment by 15%",
-                            "Achieve 90% waste diversion rate",
-                            "Complete sustainability reporting framework"
-                        ],
-                        "timeline": "Q4 2025",
-                        "metrics": ["Carbon per unit", "Waste diversion %", "Reporting compliance"]
-                    },
-                    "strategicLinkages": ["P2", "F2"],
-                    "predictedAlignmentGain": 12,
-                    "evidence": {
-                        "source": "World Economic Forum Sustainability Report",
-                        "finding": "Operational sustainability improves margin by 3-5%"
-                    },
-                    "implementationNotes": "Align with corporate sustainability team"
-                },
-                {
-                    "recommendationId": "R3",
-                    "revisedGoal": {
-                        "objective": "Establish customer feedback loop for service improvement",
-                        "keyResults": [
-                            "Implement real-time delivery tracking with NPS survey",
-                            "Achieve response rate of 30% on delivery feedback",
-                            "Reduce customer complaints by 25%"
-                        ],
-                        "timeline": "Q3 2025",
-                        "metrics": ["Survey response rate", "NPS score", "Complaint volume"]
-                    },
-                    "strategicLinkages": ["C1", "C2", "P3"],
-                    "predictedAlignmentGain": 18,
-                    "evidence": {
-                        "source": "Harvard Business Review - Customer Feedback Systems",
-                        "finding": "Real-time feedback improves NPS by 10-15 points"
-                    },
-                    "implementationNotes": "Requires CX team collaboration and IT support"
-                },
-                {
-                    "recommendationId": "R4",
-                    "revisedGoal": {
-                        "objective": "Develop continuous improvement culture through Lean Six Sigma",
-                        "keyResults": [
-                            "Complete LSS Green Belt certification",
-                            "Lead 3 improvement projects with measurable ROI",
-                            "Train 5 team members in basic LSS tools"
-                        ],
-                        "timeline": "Q4 2025",
-                        "metrics": ["Certifications", "Project ROI", "Team training hours"]
-                    },
-                    "strategicLinkages": ["L1", "L2", "P3"],
-                    "predictedAlignmentGain": 10,
-                    "evidence": {
-                        "source": "ASQ Quality Progress Survey",
-                        "finding": "LSS projects average 4:1 ROI"
-                    },
-                    "implementationNotes": "Budget needed for certification program"
-                },
-                {
-                    "recommendationId": "R5",
-                    "revisedGoal": {
-                        "objective": "Drive cost optimization through process automation",
-                        "keyResults": [
-                            "Identify and automate 5 manual processes",
-                            "Achieve $300K in annual cost savings",
-                            "Improve process cycle time by 30%"
-                        ],
-                        "timeline": "Q4 2025",
-                        "metrics": ["Processes automated", "Cost savings", "Cycle time"]
-                    },
-                    "strategicLinkages": ["F2", "P3", "P1"],
-                    "predictedAlignmentGain": 14,
-                    "evidence": {
-                        "source": "Deloitte Automation Survey 2024",
-                        "finding": "Process automation delivers 15-25% cost reduction"
-                    },
-                    "implementationNotes": "Cross-functional project requiring RPA tools"
-                }
-            ],
-            "projectedNewAlignmentScore": min(100, current_score + 25),
-            "projectedNewImpactScore": min(100, alignment_analysis.get('overallImpactScore', 50) + 20)
+            "recommendations": recommendations,
+            "projectedNewAlignmentScore": projected_alignment,
+            "projectedNewImpactScore": projected_impact
         }
+
+    def _create_contextual_recommendation(
+        self,
+        goal: Dict[str, Any],
+        index: int,
+        framework: Dict[str, Any],
+        employee_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create a contextual recommendation for a specific goal."""
+        goal_text = goal.get('goalText', '')
+        quadrant = goal.get('classification', {}).get('quadrant', 'Distraction')
+        linked_objectives = goal.get('linkedStrategicObjectives', [])
+        alignment_score = goal.get('alignmentScore', 0)
+
+        job_title = employee_context.get('jobTitle', '')
+        seniority = employee_context.get('seniorityLevel', 'mid-level')
+        department = employee_context.get('department', '')
+
+        # Get strategic objectives from framework
+        objectives = framework.get('strategicObjectives', [])
+        obj_by_perspective = {'F': [], 'C': [], 'P': [], 'I': [], 'L': []}
+        for obj in objectives:
+            obj_id = obj.get('objectiveId', '')
+            if obj_id and obj_id[0] in obj_by_perspective:
+                obj_by_perspective[obj_id[0]].append(obj)
+
+        # Determine what type of improvement is needed
+        is_outcome = goal.get('classification', {}).get('isOutcome', False)
+        is_aligned = goal.get('classification', {}).get('isAligned', False)
+
+        # Generate revised goal based on the original and what's missing
+        revised = self._generate_revised_goal(
+            goal_text, quadrant, is_outcome, is_aligned,
+            linked_objectives, objectives, job_title, seniority
+        )
+
+        # Suggest strategic linkages based on what's available
+        suggested_linkages = self._suggest_linkages(
+            goal_text, objectives, linked_objectives
+        )
+
+        # Calculate predicted gain based on current state
+        base_gain = {
+            'Distraction': 25,
+            'Busy Work Trap': 15,
+            'Rogue Project': 20,
+            'Strategic Driver': 5
+        }.get(quadrant, 10)
+
+        # Generate contextual evidence
+        evidence = self._generate_evidence(goal_text, quadrant, job_title)
+
+        # Generate implementation notes
+        impl_notes = self._generate_implementation_notes(
+            quadrant, is_outcome, is_aligned, job_title, department
+        )
+
+        return {
+            "recommendationId": f"R{index}",
+            "originalGoal": goal_text[:200] + ('...' if len(goal_text) > 200 else ''),
+            "originalClassification": quadrant,
+            "revisedGoal": revised,
+            "strategicLinkages": suggested_linkages,
+            "predictedAlignmentGain": base_gain,
+            "evidence": evidence,
+            "implementationNotes": impl_notes
+        }
+
+    def _generate_revised_goal(
+        self,
+        original: str,
+        quadrant: str,
+        is_outcome: bool,
+        is_aligned: bool,
+        linked_objectives: List[str],
+        all_objectives: List[Dict],
+        job_title: str,
+        seniority: str
+    ) -> Dict[str, Any]:
+        """Generate a revised goal based on the original and improvement needs."""
+        # Extract key theme from original goal
+        original_lower = original.lower()
+
+        # Identify the topic area
+        topic_keywords = {
+            'customer': ['customer', 'client', 'service', 'satisfaction', 'nps', 'support'],
+            'process': ['process', 'efficiency', 'operation', 'workflow', 'procedure', 'system'],
+            'financial': ['cost', 'revenue', 'budget', 'profit', 'margin', 'savings'],
+            'people': ['team', 'training', 'development', 'skill', 'capability', 'talent'],
+            'quality': ['quality', 'compliance', 'standard', 'audit', 'accuracy'],
+            'innovation': ['improve', 'new', 'innovation', 'digital', 'technology', 'transform']
+        }
+
+        detected_topic = 'process'  # default
+        for topic, keywords in topic_keywords.items():
+            if any(kw in original_lower for kw in keywords):
+                detected_topic = topic
+                break
+
+        # Build contextual revised goal
+        role_context = f" as {job_title}" if job_title else ""
+        seniority_verb = 'Lead' if seniority in ['senior', 'executive', 'director'] else 'Drive'
+
+        # Create objective based on quadrant issues
+        if quadrant == 'Distraction':
+            # Needs both alignment and outcomes
+            objective = self._create_aligned_outcome_goal(original, detected_topic, seniority_verb, all_objectives)
+            key_results = self._create_measurable_key_results(detected_topic, seniority)
+        elif quadrant == 'Busy Work Trap':
+            # Has alignment but needs outcomes
+            objective = self._convert_activity_to_outcome(original, detected_topic, seniority_verb)
+            key_results = self._create_measurable_key_results(detected_topic, seniority)
+        elif quadrant == 'Rogue Project':
+            # Has outcomes but needs alignment
+            objective = self._add_strategic_alignment(original, all_objectives, detected_topic)
+            key_results = self._preserve_outcomes_add_alignment(original, detected_topic)
+        else:
+            # Strategic Driver - minor enhancements
+            objective = original[:150] if len(original) <= 150 else original[:147] + '...'
+            key_results = self._create_measurable_key_results(detected_topic, seniority)
+
+        return {
+            "objective": objective,
+            "keyResults": key_results,
+            "timeline": "Q2 2025" if seniority in ['senior', 'executive'] else "Q3 2025",
+            "metrics": self._suggest_metrics(detected_topic)
+        }
+
+    def _create_aligned_outcome_goal(
+        self,
+        original: str,
+        topic: str,
+        verb: str,
+        objectives: List[Dict]
+    ) -> str:
+        """Create a goal with both strategic alignment and measurable outcomes."""
+        topic_goals = {
+            'customer': f"{verb} customer experience improvement initiative resulting in measurable satisfaction gains",
+            'process': f"{verb} operational excellence program to achieve quantified efficiency improvements",
+            'financial': f"{verb} cost optimization initiative with defined savings targets and ROI metrics",
+            'people': f"{verb} team capability development program with measurable skill advancement outcomes",
+            'quality': f"{verb} quality improvement initiative with specific compliance and accuracy targets",
+            'innovation': f"{verb} digital transformation project delivering measurable business value"
+        }
+
+        # Try to preserve original intent
+        words = original.split()[:5]
+        original_hint = ' '.join(words) if words else ''
+
+        base_goal = topic_goals.get(topic, topic_goals['process'])
+
+        # If original has specific context, incorporate it
+        if original_hint and len(original_hint) > 10:
+            return f"{base_goal}, building on '{original_hint}...'"
+
+        return base_goal
+
+    def _convert_activity_to_outcome(self, original: str, topic: str, verb: str) -> str:
+        """Convert an activity-based goal to outcome-oriented."""
+        # Replace activity words with outcome words
+        activity_to_outcome = {
+            'implement': 'achieve measurable results through',
+            'conduct': 'deliver quantified improvements via',
+            'perform': 'produce measurable outcomes by',
+            'complete': 'deliver business value through',
+            'attend': 'apply learnings from',
+            'participate': 'contribute measurable impact through'
+        }
+
+        result = original
+        for activity, outcome in activity_to_outcome.items():
+            if activity in original.lower():
+                result = original.lower().replace(activity, outcome)
+                result = result.capitalize()
+                break
+
+        # If no change made, prefix with outcome orientation
+        if result == original:
+            result = f"{verb} measurable improvement in {original.lower()[:100]}"
+
+        return result[:200]
+
+    def _add_strategic_alignment(
+        self,
+        original: str,
+        objectives: List[Dict],
+        topic: str
+    ) -> str:
+        """Add strategic alignment to an outcome-oriented goal."""
+        # Find relevant objective
+        perspective_map = {
+            'customer': 'C',
+            'financial': 'F',
+            'process': 'P',
+            'people': 'L',
+            'quality': 'P',
+            'innovation': 'P'
+        }
+        target_prefix = perspective_map.get(topic, 'P')
+
+        relevant_obj = None
+        for obj in objectives:
+            if obj.get('objectiveId', '').startswith(target_prefix):
+                relevant_obj = obj
+                break
+
+        if relevant_obj:
+            obj_desc = relevant_obj.get('description', '')[:50]
+            return f"Contribute to '{obj_desc}' by {original.lower()[:120]}"
+
+        return f"Align to organizational strategy by {original.lower()[:150]}"
+
+    def _preserve_outcomes_add_alignment(self, original: str, topic: str) -> List[str]:
+        """Preserve outcome nature but add strategic connection."""
+        return [
+            f"Achieve measurable progress on original goal: {original[:80]}...",
+            "Document and report strategic contribution quarterly",
+            "Collaborate with stakeholders to validate strategic impact"
+        ]
+
+    def _create_measurable_key_results(self, topic: str, seniority: str) -> List[str]:
+        """Create measurable key results based on topic and seniority."""
+        topic_krs = {
+            'customer': [
+                "Improve customer satisfaction score by 10+ points",
+                "Reduce customer complaint rate by 20%",
+                "Achieve 90%+ positive feedback rating"
+            ],
+            'process': [
+                "Reduce process cycle time by 25%",
+                "Achieve 95%+ process compliance rate",
+                "Eliminate 3 manual process steps through automation"
+            ],
+            'financial': [
+                "Deliver 15% cost reduction in target area",
+                "Achieve ROI of 3:1 or better",
+                "Stay within 5% of approved budget"
+            ],
+            'people': [
+                "Complete targeted skill development for 80% of team",
+                "Achieve 90%+ training satisfaction scores",
+                "Demonstrate measurable capability improvement via assessment"
+            ],
+            'quality': [
+                "Achieve 98%+ accuracy rate on deliverables",
+                "Zero critical compliance findings",
+                "Pass all scheduled audits on first attempt"
+            ],
+            'innovation': [
+                "Launch pilot within committed timeline",
+                "Achieve 20% improvement in target metric",
+                "Document lessons learned and best practices"
+            ]
+        }
+
+        return topic_krs.get(topic, topic_krs['process'])
+
+    def _suggest_linkages(
+        self,
+        goal_text: str,
+        objectives: List[Dict],
+        existing_linkages: List[str]
+    ) -> List[str]:
+        """Suggest strategic objective linkages based on goal content."""
+        goal_lower = goal_text.lower()
+        suggested = []
+
+        # Map keywords to perspectives
+        keyword_perspective = {
+            'F': ['cost', 'revenue', 'profit', 'margin', 'budget', 'financial', 'savings'],
+            'C': ['customer', 'client', 'satisfaction', 'service', 'nps', 'retention'],
+            'P': ['process', 'efficiency', 'operation', 'quality', 'compliance', 'delivery'],
+            'I': ['innovation', 'digital', 'technology', 'new', 'transform', 'improve'],
+            'L': ['team', 'training', 'skill', 'development', 'capability', 'learning']
+        }
+
+        matched_perspectives = set()
+        for perspective, keywords in keyword_perspective.items():
+            if any(kw in goal_lower for kw in keywords):
+                matched_perspectives.add(perspective)
+
+        # Add at least one from each matched perspective
+        for obj in objectives:
+            obj_id = obj.get('objectiveId', '')
+            if obj_id and obj_id[0] in matched_perspectives:
+                if obj_id not in suggested:
+                    suggested.append(obj_id)
+                    if len(suggested) >= 3:
+                        break
+
+        # If nothing matched, suggest first from each main perspective
+        if not suggested:
+            for obj in objectives[:4]:
+                obj_id = obj.get('objectiveId', '')
+                if obj_id:
+                    suggested.append(obj_id)
+
+        return suggested[:3]
+
+    def _suggest_metrics(self, topic: str) -> List[str]:
+        """Suggest metrics based on goal topic."""
+        topic_metrics = {
+            'customer': ['NPS score', 'Customer satisfaction rating', 'Response time'],
+            'process': ['Cycle time', 'Throughput', 'Error rate'],
+            'financial': ['Cost savings', 'ROI', 'Budget variance'],
+            'people': ['Training completion', 'Skill assessment scores', 'Engagement rating'],
+            'quality': ['Accuracy rate', 'Compliance score', 'Defect rate'],
+            'innovation': ['Adoption rate', 'Time to value', 'User satisfaction']
+        }
+        return topic_metrics.get(topic, ['Progress %', 'Completion rate', 'Quality score'])
+
+    def _generate_evidence(
+        self,
+        goal_text: str,
+        quadrant: str,
+        job_title: str
+    ) -> Dict[str, str]:
+        """Generate contextual evidence for the recommendation."""
+        quadrant_evidence = {
+            'Distraction': {
+                'source': 'Performance Management Research - Harvard Business Review',
+                'finding': 'Goals lacking both strategic alignment and measurable outcomes have <20% completion rates and minimal organizational impact'
+            },
+            'Busy Work Trap': {
+                'source': 'OKR Implementation Studies - Measure What Matters',
+                'finding': 'Converting activity-based goals to outcome-oriented objectives increases achievement rates by 30-40%'
+            },
+            'Rogue Project': {
+                'source': 'Strategic Alignment Research - MIT Sloan Management Review',
+                'finding': 'High-quality individual work without strategic connection captures only 40% of potential organizational value'
+            },
+            'Strategic Driver': {
+                'source': 'High-Performance Organization Studies',
+                'finding': 'Well-aligned outcome goals with clear metrics achieve 85%+ completion rates'
+            }
+        }
+        return quadrant_evidence.get(quadrant, quadrant_evidence['Distraction'])
+
+    def _generate_implementation_notes(
+        self,
+        quadrant: str,
+        is_outcome: bool,
+        is_aligned: bool,
+        job_title: str,
+        department: str
+    ) -> str:
+        """Generate contextual implementation notes."""
+        notes = []
+
+        if not is_aligned:
+            notes.append("Review strategic framework with manager to identify strongest objective linkages")
+
+        if not is_outcome:
+            notes.append("Reframe using 'achieve/deliver/improve' language with specific quantifiable targets")
+
+        if quadrant == 'Distraction':
+            notes.append("Consider whether this goal should be deprioritized or eliminated entirely")
+
+        if job_title:
+            notes.append(f"Leverage {job_title} responsibilities to demonstrate strategic impact")
+
+        if department:
+            notes.append(f"Coordinate with {department} leadership on priority alignment")
+
+        if not notes:
+            notes.append("Continue strong alignment practices and consider stretch targets")
+
+        return '. '.join(notes)
 
     def generate_portfolio_recommendations(
         self,

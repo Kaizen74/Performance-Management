@@ -174,6 +174,8 @@ export interface GoalAnalysis {
 
 export interface GoalRecommendation {
   recommendationId: string;
+  originalGoal?: string;
+  originalClassification?: 'Distraction' | 'Busy Work Trap' | 'Rogue Project' | 'Strategic Driver';
   revisedGoal: {
     objective: string;
     keyResults: string[];
