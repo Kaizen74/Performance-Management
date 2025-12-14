@@ -56,12 +56,19 @@ class GoalsTableProcessor:
 
     GOAL_PATTERNS = [
         'goal', 'objective', 'target', 'kpi', 'performance goal',
-        'goal_description', 'objective_description', 'goal_title'
+        'goal_description', 'objective_description'
+    ]
+
+    # Goal title patterns - these are category/short title columns, not the main goal text
+    GOAL_TITLE_PATTERNS = [
+        'goal title', 'goal_title', 'objective title', 'goal name',
+        'objective name', 'goal type', 'goal category'
     ]
 
     GOAL_DESCRIPTION_PATTERNS = [
-        'description', 'details', 'goal description', 'notes',
-        'goal_detail', 'objective_detail', 'measure', 'success criteria'
+        'goal description', 'description', 'details', 'notes',
+        'goal_detail', 'objective_detail', 'measure', 'success criteria',
+        'goal_description', 'objective_description'
     ]
 
     GOAL_WEIGHT_PATTERNS = [
@@ -178,7 +185,8 @@ class GoalsTableProcessor:
             'department': None,
             'seniority': None,
             'goal_columns': [],
-            'goal_description_columns': [],
+            'goal_title_columns': [],  # Short title/category columns like "Goal Title"
+            'goal_description_columns': [],  # Detailed goal text columns like "Goal Description"
             'goal_weight_columns': [],
             'goal_category_columns': []
         }
@@ -216,17 +224,24 @@ class GoalsTableProcessor:
                     mapping['seniority'] = original
                     continue
 
-            # Check goal columns (can have multiple: Goal 1, Goal 2, etc.)
-            if any(pattern in col for pattern in self.GOAL_PATTERNS):
-                # Avoid duplicating description columns
-                if not any(pattern in col for pattern in self.GOAL_DESCRIPTION_PATTERNS):
-                    mapping['goal_columns'].append(original)
-                    continue
+            # Check goal title columns FIRST (e.g., "Goal Title" - short category names)
+            if any(pattern in col for pattern in self.GOAL_TITLE_PATTERNS):
+                mapping['goal_title_columns'].append(original)
+                continue
 
-            # Check goal description columns
+            # Check goal description columns (e.g., "Goal Description" - the actual detailed goal text)
             if any(pattern in col for pattern in self.GOAL_DESCRIPTION_PATTERNS):
                 mapping['goal_description_columns'].append(original)
                 continue
+
+            # Check generic goal columns (can have multiple: Goal 1, Goal 2, etc.)
+            # Only use if not a title or description column
+            if any(pattern in col for pattern in self.GOAL_PATTERNS):
+                # Avoid duplicating if already matched as title or description
+                if not any(pattern in col for pattern in self.GOAL_TITLE_PATTERNS):
+                    if not any(pattern in col for pattern in self.GOAL_DESCRIPTION_PATTERNS):
+                        mapping['goal_columns'].append(original)
+                        continue
 
             # Check goal weight columns
             if any(pattern in col for pattern in self.GOAL_WEIGHT_PATTERNS):
@@ -387,38 +402,14 @@ class GoalsTableProcessor:
         goals = []
 
         goal_cols = column_mapping.get('goal_columns', [])
+        title_cols = column_mapping.get('goal_title_columns', [])
         desc_cols = column_mapping.get('goal_description_columns', [])
         weight_cols = column_mapping.get('goal_weight_columns', [])
         category_cols = column_mapping.get('goal_category_columns', [])
 
-        if goal_cols:
-            # Multiple goal columns (Goal 1, Goal 2, etc.)
-            for i, goal_col in enumerate(goal_cols):
-                goal_text = self._get_value(row, goal_col)
-                if goal_text:
-                    goal = {
-                        'goalText': goal_text,
-                        'description': '',
-                        'weight': '',
-                        'category': ''
-                    }
-
-                    # Try to match with description column
-                    if i < len(desc_cols):
-                        goal['description'] = self._get_value(row, desc_cols[i]) or ''
-
-                    # Try to match with weight column
-                    if i < len(weight_cols):
-                        goal['weight'] = self._get_value(row, weight_cols[i]) or ''
-
-                    # Try to match with category column
-                    if i < len(category_cols):
-                        goal['category'] = self._get_value(row, category_cols[i]) or ''
-
-                    goals.append(goal)
-
-        elif desc_cols:
-            # Only description columns, treat each as a goal
+        # PRIORITY 1: If we have goal description columns, use them as primary goal text
+        # This handles formats like: Goal Title | Goal Description | Goal Weight
+        if desc_cols:
             for i, desc_col in enumerate(desc_cols):
                 desc_text = self._get_value(row, desc_col)
                 if desc_text:
@@ -429,11 +420,67 @@ class GoalsTableProcessor:
                         'category': ''
                     }
 
+                    # Use goal title as category/title if available
+                    if i < len(title_cols):
+                        goal['category'] = self._get_value(row, title_cols[i]) or ''
+                    elif len(title_cols) == 1:
+                        # Single title column applies to all goals in the row
+                        goal['category'] = self._get_value(row, title_cols[0]) or ''
+                    elif i < len(category_cols):
+                        goal['category'] = self._get_value(row, category_cols[i]) or ''
+
+                    # Get weight
+                    if i < len(weight_cols):
+                        goal['weight'] = self._get_value(row, weight_cols[i]) or ''
+                    elif len(weight_cols) == 1:
+                        # Single weight column applies to this goal
+                        goal['weight'] = self._get_value(row, weight_cols[0]) or ''
+
+                    goals.append(goal)
+
+            return goals
+
+        # PRIORITY 2: If we have goal columns but no description columns
+        # This handles formats like: Goal 1 | Goal 2 | Goal 3
+        if goal_cols:
+            for i, goal_col in enumerate(goal_cols):
+                goal_text = self._get_value(row, goal_col)
+                if goal_text:
+                    goal = {
+                        'goalText': goal_text,
+                        'description': '',
+                        'weight': '',
+                        'category': ''
+                    }
+
+                    # Try to match with weight column
                     if i < len(weight_cols):
                         goal['weight'] = self._get_value(row, weight_cols[i]) or ''
 
+                    # Try to match with category column
                     if i < len(category_cols):
                         goal['category'] = self._get_value(row, category_cols[i]) or ''
+                    elif i < len(title_cols):
+                        goal['category'] = self._get_value(row, title_cols[i]) or ''
+
+                    goals.append(goal)
+
+            return goals
+
+        # PRIORITY 3: If only title columns exist (shouldn't normally happen, but fallback)
+        if title_cols:
+            for i, title_col in enumerate(title_cols):
+                title_text = self._get_value(row, title_col)
+                if title_text:
+                    goal = {
+                        'goalText': title_text,
+                        'description': '',
+                        'weight': '',
+                        'category': ''
+                    }
+
+                    if i < len(weight_cols):
+                        goal['weight'] = self._get_value(row, weight_cols[i]) or ''
 
                     goals.append(goal)
 
