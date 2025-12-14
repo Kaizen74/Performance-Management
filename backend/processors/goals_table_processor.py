@@ -385,8 +385,15 @@ class GoalsTableProcessor:
             goals = self._extract_goals_from_row(row, column_mapping)
             all_goals.extend(goals)
 
+        # If no goals extracted, still include employee with a placeholder
+        # This ensures we don't silently drop employees from the analysis
         if not all_goals:
-            return None
+            all_goals = [{
+                'goalText': '(No goals defined in source data)',
+                'description': '',
+                'weight': '',
+                'category': 'Undefined'
+            }]
 
         return EmployeeGoalRecord(
             employeeId=employee_id,
@@ -453,13 +460,19 @@ class GoalsTableProcessor:
                 if other['text'] not in combined_parts:
                     combined_parts.append(other['text'])
 
+            # If no descriptions or other text found, use title text as the goal
+            # This ensures we don't skip employees who only have title filled in
+            if not combined_parts and titles:
+                for title in titles:
+                    combined_parts.append(title['text'])
+
             # Build the final goal text
             if combined_parts:
                 goal_text = ' | '.join(combined_parts)
 
-                # Get category from title column
+                # Get category from title column (only if title wasn't used as main text)
                 category = ''
-                if titles:
+                if titles and titles[0]['text'] not in combined_parts:
                     category = titles[0]['text']
                 elif category_cols:
                     category = self._get_value(row, category_cols[0]) or ''
@@ -566,21 +579,32 @@ class GoalsTableProcessor:
     def _is_text_column(self, df, column: str) -> bool:
         """Check if a column contains meaningful text data (not just numbers)."""
         try:
-            # Sample non-null values from the column
-            non_null = df[column].dropna().head(10)
+            # Sample non-null values from the column (sample more for better accuracy)
+            non_null = df[column].dropna()
             if len(non_null) == 0:
                 return False
 
-            # Check if values are primarily text (not just numbers)
+            # Sample up to 20 values spread across the column
+            sample_size = min(20, len(non_null))
+            if len(non_null) > sample_size:
+                # Sample evenly across the column
+                indices = [int(i * len(non_null) / sample_size) for i in range(sample_size)]
+                sampled = [non_null.iloc[i] for i in indices]
+            else:
+                sampled = non_null.tolist()
+
+            # Check if ANY values contain text (not just numbers)
+            # Be more lenient - if even one value has text, consider it a text column
             text_count = 0
-            for val in non_null:
+            for val in sampled:
                 str_val = str(val).strip()
-                # Consider it text if it has letters and is reasonably long
-                if any(c.isalpha() for c in str_val) and len(str_val) > 2:
+                # Consider it text if it has letters
+                if any(c.isalpha() for c in str_val):
                     text_count += 1
 
-            # If majority of sampled values are text, consider it a text column
-            return text_count > len(non_null) * 0.5
+            # If at least 25% of sampled values have text, consider it a text column
+            # This is more lenient to handle columns with some empty values
+            return text_count >= max(1, len(sampled) * 0.25)
         except Exception:
             return False
 
