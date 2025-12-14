@@ -470,8 +470,9 @@ class MockRecommendationClient:
                 break
 
         # Build contextual revised goal
+        # New seniority categories: individual contributor, team leader, senior management
         role_context = f" as {job_title}" if job_title else ""
-        seniority_verb = 'Lead' if seniority in ['senior', 'executive', 'director'] else 'Drive'
+        seniority_verb = 'Lead' if seniority in ['senior management', 'team leader', 'senior', 'executive', 'director'] else 'Drive'
 
         # Create objective based on quadrant issues
         if quadrant == 'Distraction':
@@ -494,7 +495,7 @@ class MockRecommendationClient:
         return {
             "objective": objective,
             "keyResults": key_results,
-            "timeline": "Q2 2025" if seniority in ['senior', 'executive'] else "Q3 2025",
+            "timeline": "Q2 2025" if seniority in ['senior management', 'team leader', 'senior', 'executive'] else "Q3 2025",
             "metrics": self._suggest_metrics(detected_topic)
         }
 

@@ -613,31 +613,59 @@ class GoalsTableProcessor:
         seniority_value: Optional[str],
         job_title: Optional[str]
     ) -> Optional[str]:
-        """Infer seniority level from available data."""
-        # Check explicit seniority value
-        if seniority_value:
-            lower = seniority_value.lower()
-            if any(x in lower for x in ['exec', 'chief', 'ceo', 'cfo', 'cto', 'vp', 'president', 'director']):
-                return 'executive'
-            if any(x in lower for x in ['senior', 'sr', 'lead', 'principal', 'manager']):
-                return 'senior'
-            if any(x in lower for x in ['mid', 'intermediate', 'ii', 'iii']):
-                return 'mid'
-            if any(x in lower for x in ['junior', 'jr', 'entry', 'associate', 'analyst', 'i']):
-                return 'junior'
+        """
+        Infer seniority level from job title using three categories:
+        - 'individual contributor': No managerial element in title
+        - 'team leader': Has managerial element (manager, supervisor, team lead, etc.)
+        - 'senior management': Senior managerial roles with direct reports who are team leaders
+        """
+        if not job_title:
+            # Default to individual contributor if no job title
+            return 'individual contributor'
 
-        # Infer from job title
-        if job_title:
-            lower = job_title.lower()
-            if any(x in lower for x in ['chief', 'ceo', 'cfo', 'cto', 'coo', 'vp', 'vice president', 'president', 'director', 'head of']):
-                return 'executive'
-            if any(x in lower for x in ['senior', 'sr.', 'sr ', 'lead', 'principal', 'manager', 'supervisor']):
-                return 'senior'
-            if any(x in lower for x in ['junior', 'jr.', 'jr ', 'entry', 'trainee', 'intern', 'graduate']):
-                return 'junior'
-            return 'mid'
+        lower = job_title.lower()
 
-        return None
+        # SENIOR MANAGEMENT indicators - these roles typically have team leaders reporting to them
+        # Order matters - check these FIRST before team leader patterns
+        senior_management_patterns = [
+            # C-suite
+            'ceo', 'cfo', 'cto', 'coo', 'cio', 'cmo', 'chief',
+            # Director level
+            'director',
+            # VP level
+            'svp', 'senior vice president', 'vice president', 'vp ',
+            # Country/Regional/Global leadership
+            'country manager', 'regional manager', 'general manager',
+            'global head', 'regional head', 'country head',
+            'head of', 'managing director',
+            # President
+            'president'
+        ]
+
+        for pattern in senior_management_patterns:
+            if pattern in lower:
+                return 'senior management'
+
+        # TEAM LEADER indicators - managerial roles with direct reports
+        team_leader_patterns = [
+            'manager',        # Any manager role
+            'supervisor',     # Supervisor roles
+            'team lead',      # Team lead
+            'team leader',    # Team leader
+            'head',           # Head (without country/regional/global prefix - those are caught above)
+            'lead ',          # Lead with space (to avoid "leader" false positive)
+            ' lead',          # Lead at end of title
+        ]
+
+        for pattern in team_leader_patterns:
+            if pattern in lower:
+                return 'team leader'
+
+        # INDIVIDUAL CONTRIBUTOR - no managerial element detected
+        # This includes: Engineers, Specialists, Ambassadors, Analysts,
+        # Sales Executives (Executive here is a sales role, not management),
+        # Application Specialists, Field Service Engineers, etc.
+        return 'individual contributor'
 
     def _record_to_dict(self, record: EmployeeGoalRecord) -> Dict[str, Any]:
         """Convert an EmployeeGoalRecord to a dictionary."""

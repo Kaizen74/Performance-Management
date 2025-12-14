@@ -1212,7 +1212,12 @@ STRATEGIC COVERAGE CHECK
     def _calculate_impact_base(self, seniority: str) -> int:
         """Calculate base impact score by seniority level."""
         # Higher seniority = higher potential impact
+        # New categories: individual contributor, team leader, senior management
         impact_bases = {
+            'senior management': 85,
+            'team leader': 75,
+            'individual contributor': 65,
+            # Legacy mappings for backward compatibility
             'executive': 85,
             'senior': 75,
             'mid': 65,
@@ -1544,7 +1549,12 @@ STRATEGIC COVERAGE CHECK
     ) -> int:
         """Calculate impact score based on seniority, alignment, and goal characteristics."""
         # Base impact by seniority (higher seniority = higher potential impact)
+        # New categories: individual contributor, team leader, senior management
         base_scores = {
+            'senior management': 80,
+            'team leader': 70,
+            'individual contributor': 60,
+            # Legacy mappings
             'executive': 80,
             'senior': 70,
             'mid': 60,
@@ -1580,19 +1590,21 @@ STRATEGIC COVERAGE CHECK
         """Generate role-contextualized alignment rationale."""
         obj_str = ", ".join(aligned_objectives)
 
-        if seniority == 'executive':
+        # New seniority categories: individual contributor, team leader, senior management
+        if seniority == 'senior management' or seniority == 'executive':
             return (
                 f"As a {job_title}, this goal demonstrates enterprise-level strategic thinking by "
                 f"directly enabling objectives {obj_str}. The scope and ambition are appropriate for "
-                f"an executive role, focusing on outcomes that cascade throughout {department}. "
-                f"This goal shows strong translation of organizational vision into leadership action."
+                f"a senior management role, focusing on outcomes that cascade throughout {department}. "
+                f"This goal shows strong translation of organizational vision into leadership action. "
+                f"Senior management goals should closely relate to organizational strategy and include team leadership elements."
             )
-        elif seniority == 'senior':
+        elif seniority == 'team leader' or seniority == 'senior':
             return (
                 f"This goal effectively bridges strategic intent to operational execution, which is "
-                f"appropriate for a {job_title} at the senior level. It connects to objectives {obj_str} "
+                f"appropriate for a {job_title} as a team leader. It connects to objectives {obj_str} "
                 f"by translating organizational priorities into actionable team initiatives within {department}. "
-                f"The goal shows understanding of how to operationalize strategy."
+                f"Team leaders should have at least one goal focused on leadership or team development."
             )
         elif seniority == 'junior':
             return (
@@ -1601,12 +1613,12 @@ STRATEGIC COVERAGE CHECK
                 f"understanding of how individual work connects to {department}'s strategic priorities, "
                 f"though the linkage could be more explicitly articulated."
             )
-        else:  # mid-level
+        else:  # individual contributor (default)
             return (
-                f"As a {job_title}, this goal reflects solid understanding of how functional work "
-                f"contributes to organizational strategy. It supports objectives {obj_str} through "
-                f"team-level execution in {department}. The goal appropriately balances individual "
-                f"contribution with awareness of broader strategic context."
+                f"As a {job_title} (individual contributor), this goal reflects understanding of how "
+                f"functional work contributes to organizational strategy. It supports objectives {obj_str} "
+                f"through individual execution in {department}. The goal appropriately focuses on "
+                f"personal contribution and technical/functional excellence."
             )
 
     def _generate_impact_rationale(
@@ -1617,18 +1629,21 @@ STRATEGIC COVERAGE CHECK
         department: str
     ) -> str:
         """Generate role-contextualized impact rationale."""
-        if seniority == 'executive':
+        # New seniority categories: individual contributor, team leader, senior management
+        if seniority == 'senior management' or seniority == 'executive':
             return (
                 f"Given the {job_title} role's span of influence, successful achievement would have "
                 f"significant strategic leverage, potentially enabling multiple downstream objectives "
                 f"and setting direction for {department}. Impact extends beyond direct outcomes to "
-                f"organizational capability building."
+                f"organizational capability building. Senior management should drive goals closely aligned "
+                f"with organizational vision and strategy."
             )
-        elif seniority == 'senior':
+        elif seniority == 'team leader' or seniority == 'senior':
             return (
-                f"As a {job_title}, successful execution would demonstrate leadership in {department} "
-                f"and create enabling conditions for team success. The impact multiplier comes from "
-                f"both direct contribution and influence on others' effectiveness."
+                f"As a {job_title} (team leader), successful execution would demonstrate leadership in "
+                f"{department} and create enabling conditions for team success. The impact multiplier "
+                f"comes from both direct contribution and influence on team members' effectiveness. "
+                f"Team leaders should include at least one leadership or team development goal."
             )
         elif seniority == 'junior':
             return (
@@ -1636,11 +1651,11 @@ STRATEGIC COVERAGE CHECK
                 f"contribution within {department}. Success builds foundational capabilities and "
                 f"demonstrates readiness for increased responsibility."
             )
-        else:
+        else:  # individual contributor
             return (
-                f"The {job_title} role positions this goal for meaningful functional impact within "
-                f"{department}. Success would contribute directly to team objectives while demonstrating "
-                f"the ability to execute on strategic priorities."
+                f"As an individual contributor ({job_title}), this goal positions for meaningful "
+                f"functional impact within {department}. Success would contribute directly to team "
+                f"objectives through technical/functional excellence and individual execution."
             )
 
     def _generate_role_appropriateness(
@@ -1650,17 +1665,19 @@ STRATEGIC COVERAGE CHECK
         seniority: str
     ) -> str:
         """Assess if goal is appropriate for the role/level."""
-        if seniority == 'executive':
+        # New seniority categories: individual contributor, team leader, senior management
+        if seniority == 'senior management' or seniority == 'executive':
             return (
-                f"The goal's scope is generally appropriate for an executive {job_title} role, "
-                f"focusing on strategic outcomes rather than tactical activities. Consider ensuring "
-                f"the goal emphasizes enterprise impact and leadership enablement."
+                f"The goal's scope is generally appropriate for a senior management {job_title} role, "
+                f"focusing on strategic outcomes rather than tactical activities. Ensure "
+                f"the goal emphasizes enterprise impact, leadership enablement, and aligns closely "
+                f"with organizational vision and strategy."
             )
-        elif seniority == 'senior':
+        elif seniority == 'team leader' or seniority == 'senior':
             return (
-                f"This goal is well-suited for a senior {job_title}, appropriately balancing "
+                f"This goal is well-suited for a {job_title} as a team leader, appropriately balancing "
                 f"strategic alignment with operational leadership. The scope reflects expected "
-                f"influence over team and cross-functional outcomes."
+                f"influence over team outcomes. Ensure at least one goal addresses leadership or team development."
             )
         elif seniority == 'junior':
             return (
@@ -1668,26 +1685,27 @@ STRATEGIC COVERAGE CHECK
                 f"skill development and direct contribution. The scope is achievable while "
                 f"providing meaningful learning opportunities."
             )
-        else:
+        else:  # individual contributor
             return (
-                f"The goal's scope and complexity are appropriate for a mid-level {job_title}, "
-                f"requiring both individual expertise and collaborative execution."
+                f"The goal's scope and complexity are appropriate for a {job_title} as an individual "
+                f"contributor, requiring technical/functional expertise and focused execution."
             )
 
     def _generate_role_assessment(self, job_title: str, seniority: str, goal_count: int) -> str:
         """Generate overall role appropriateness assessment."""
-        if seniority == 'executive':
+        # New seniority categories: individual contributor, team leader, senior management
+        if seniority == 'senior management' or seniority == 'executive':
             return (
-                f"As a {job_title} at the executive level, the goal set shows appropriate strategic focus. "
-                f"The {goal_count} goals generally reflect enterprise-level thinking, though some could "
-                f"be elevated to focus more on enabling organizational capabilities rather than direct execution. "
-                f"Executive goals should cascade to enable others' success."
+                f"As a {job_title} (senior management), the goal set should show strategic focus and "
+                f"alignment with organizational vision. The {goal_count} goals should include leadership "
+                f"elements and demonstrate how work cascades to enable others' success. "
+                f"Senior management goals should closely relate to organizational strategy."
             )
-        elif seniority == 'senior':
+        elif seniority == 'team leader' or seniority == 'senior':
             return (
-                f"The goal set for this {job_title} (senior level) appropriately bridges strategy and execution. "
-                f"The {goal_count} goals show good balance between leadership responsibilities and operational "
-                f"impact. Consider strengthening cross-functional collaboration elements."
+                f"The goal set for this {job_title} (team leader) should bridge strategy and execution. "
+                f"The {goal_count} goals should include at least one leadership or team development goal. "
+                f"Consider strengthening cross-functional collaboration and people management elements."
             )
         elif seniority == 'junior':
             return (
@@ -1695,11 +1713,11 @@ STRATEGIC COVERAGE CHECK
                 f"and direct contribution. The {goal_count} goals are achievable and provide clear success criteria. "
                 f"Consider adding goals that demonstrate understanding of broader organizational context."
             )
-        else:
+        else:  # individual contributor
             return (
-                f"This {job_title} (mid-level) has a goal set that balances individual contribution with team impact. "
-                f"The {goal_count} goals show solid understanding of functional responsibilities. Consider adding "
-                f"stretch goals that demonstrate readiness for advancement."
+                f"This {job_title} (individual contributor) has a goal set focused on functional contribution "
+                f"and technical excellence. The {goal_count} goals should demonstrate solid understanding of "
+                f"how individual work connects to team and organizational objectives."
             )
 
     def _generate_coherence_assessment(
@@ -1815,25 +1833,28 @@ STRATEGIC COVERAGE CHECK
             "Include more measurable targets with specific timelines"
         ]
 
-        if seniority == 'executive':
+        # New seniority categories: individual contributor, team leader, senior management
+        if seniority == 'senior management' or seniority == 'executive':
             base_recommendations.extend([
-                "Consider adding goals focused on organizational capability building",
-                "Include goals that enable and cascade to leadership team success"
+                "Ensure goals closely align with organizational vision and strategy",
+                "Include goals that enable and cascade to leadership team success",
+                "Add at least one leadership or team management goal"
             ])
-        elif seniority == 'senior':
+        elif seniority == 'team leader' or seniority == 'senior':
             base_recommendations.extend([
                 f"Add cross-functional collaboration goals within {department}",
-                "Consider goals that develop team members' capabilities"
+                "Include at least one leadership or team development goal",
+                "Consider goals that develop direct reports' capabilities"
             ])
         elif seniority == 'junior':
             base_recommendations.extend([
                 "Add goals focused on skill development in strategic areas",
                 f"Consider stretch goals that demonstrate readiness for growth in {department}"
             ])
-        else:
+        else:  # individual contributor
             base_recommendations.extend([
-                "Add goals demonstrating cross-functional impact",
-                "Consider including innovation or improvement-focused goals"
+                "Add goals demonstrating functional/technical excellence",
+                "Consider goals showing how individual work supports team objectives"
             ])
 
         return base_recommendations[:5]  # Return top 5
@@ -1851,12 +1872,14 @@ STRATEGIC COVERAGE CHECK
 
     def _identify_gaps(self, goal_num: int, seniority: str) -> List[str]:
         """Identify gaps based on goal and seniority."""
+        # New seniority categories: individual contributor, team leader, senior management
         if goal_num % 2 == 0:
-            if seniority == 'executive':
-                return ["No explicit linkage to shareholder value metrics"]
-            elif seniority == 'senior':
-                return ["Could strengthen connection to team development outcomes"]
-            else:
+            if seniority == 'senior management' or seniority == 'executive':
+                return ["Goals should closely align with organizational vision and strategy",
+                        "Consider adding leadership or team management goals"]
+            elif seniority == 'team leader' or seniority == 'senior':
+                return ["Include at least one leadership or team development goal"]
+            else:  # individual contributor
                 return ["No direct link to customer satisfaction metrics"]
         return []
 
