@@ -17,6 +17,8 @@ class EmployeeGoalRecord:
     employeeName: str
     jobTitle: Optional[str]
     department: Optional[str]
+    businessUnit: Optional[str]
+    group: Optional[str]
     company: Optional[str]
     seniorityLevel: Optional[str]
     goals: List[Dict[str, str]]
@@ -31,28 +33,45 @@ class GoalsTableProcessor:
 
     # Common column name patterns for employee identification
     # Includes standard HR system exports AND "Subject" prefix patterns (e.g., from SAP SuccessFactors)
+    # NOTE: Order matters! More specific patterns should come first to avoid false matches
     EMPLOYEE_NAME_PATTERNS = [
-        'subject full name', 'subject name',  # SAP SuccessFactors "Subject" patterns
-        'employee name', 'employee', 'name', 'full name', 'worker',
-        'employee_name', 'emp_name', 'worker_name', 'associate'
+        'subject full name',  # SAP SuccessFactors - most specific, must come first
+        'subject name',
+        'employee name', 'full name', 'worker name',
+        'employee_name', 'emp_name', 'worker_name',
+        'employee', 'name', 'worker', 'associate'  # Generic patterns last
     ]
 
     EMPLOYEE_ID_PATTERNS = [
-        'subject employee id', 'subject id',  # SAP SuccessFactors "Subject" patterns
+        'subject employee id',  # SAP SuccessFactors - most specific
+        'subject id',
         'employee id', 'employee_id', 'emp id', 'emp_id', 'worker id',
-        'worker_id', 'id', 'employee number', 'emp_number', 'badge'
+        'worker_id', 'employee number', 'emp_number', 'badge',
+        'id'  # Very generic, must be last
     ]
 
     JOB_TITLE_PATTERNS = [
         'subject title',  # SAP SuccessFactors - Job/Position Title
-        'job title', 'title', 'position', 'role', 'job_title',
-        'position_title', 'job', 'designation'
+        'job title', 'position title', 'job_title', 'position_title',
+        'title', 'position', 'role', 'job', 'designation'
     ]
 
     DEPARTMENT_PATTERNS = [
-        'subject department', 'subject business unit',  # SAP SuccessFactors
-        'department', 'dept', 'team', 'division', 'org unit',
-        'organization', 'business unit', 'cost center'
+        'subject department',  # SAP SuccessFactors - most specific department pattern
+        'department', 'dept',
+        'division', 'org unit', 'team', 'cost center'
+    ]
+
+    # Business unit patterns - separate from department for more accurate mapping
+    BUSINESS_UNIT_PATTERNS = [
+        'subject business unit',  # SAP SuccessFactors
+        'business unit', 'business_unit', 'bu'
+    ]
+
+    # Group/Division patterns for organizational hierarchy (less specific than department)
+    GROUP_PATTERNS = [
+        'subject group business unit',  # SAP SuccessFactors group level
+        'group', 'segment', 'division'
     ]
 
     # Company patterns - for organizational context
@@ -215,6 +234,8 @@ class GoalsTableProcessor:
             'employee_id': None,
             'job_title': None,
             'department': None,
+            'business_unit': None,  # Subject Business Unit
+            'group': None,  # Subject Group Business Unit (organizational group)
             'company': None,  # Company/Organization
             'seniority': None,
             'grade_group': None,  # Subject Grade Group (SVP, VP, AVP, etc.)
@@ -236,36 +257,65 @@ class GoalsTableProcessor:
                 if self._is_text_column(df, original):
                     mapping['all_goal_text_columns'].append(original)
 
+        # Helper function for exact match on SAP SuccessFactors columns
+        def matches_pattern(col_name: str, patterns: list) -> bool:
+            """Check if column matches any pattern. Uses exact match for 'subject' patterns."""
+            for pattern in patterns:
+                if pattern.startswith('subject '):
+                    # For Subject patterns, require exact match (minus any trailing codes)
+                    # e.g., "subject full name" should match column "Subject Full Name"
+                    col_base = col_name.split('(')[0].strip()  # Remove trailing codes like "(51209305)"
+                    if col_base == pattern or col_name == pattern:
+                        return True
+                else:
+                    # For other patterns, substring match is fine
+                    if pattern in col_name:
+                        return True
+            return False
+
         for i, col in enumerate(columns):
             original = original_columns[i]
 
-            # Check employee name
-            if mapping['employee_name'] is None:
-                if any(pattern in col for pattern in self.EMPLOYEE_NAME_PATTERNS):
-                    mapping['employee_name'] = original
+            # Check employee ID FIRST (before name, since ID patterns are more specific)
+            if mapping['employee_id'] is None:
+                if matches_pattern(col, self.EMPLOYEE_ID_PATTERNS):
+                    mapping['employee_id'] = original
                     continue
 
-            # Check employee ID
-            if mapping['employee_id'] is None:
-                if any(pattern in col for pattern in self.EMPLOYEE_ID_PATTERNS):
-                    mapping['employee_id'] = original
+            # Check employee name
+            if mapping['employee_name'] is None:
+                if matches_pattern(col, self.EMPLOYEE_NAME_PATTERNS):
+                    mapping['employee_name'] = original
                     continue
 
             # Check job title
             if mapping['job_title'] is None:
-                if any(pattern in col for pattern in self.JOB_TITLE_PATTERNS):
+                if matches_pattern(col, self.JOB_TITLE_PATTERNS):
                     mapping['job_title'] = original
                     continue
 
-            # Check department
+            # Check group FIRST (Subject Group Business Unit - organizational group)
+            # Must check before business_unit since "group business unit" contains "business unit"
+            if mapping['group'] is None:
+                if matches_pattern(col, self.GROUP_PATTERNS):
+                    mapping['group'] = original
+                    continue
+
+            # Check business unit (Subject Business Unit)
+            if mapping['business_unit'] is None:
+                if matches_pattern(col, self.BUSINESS_UNIT_PATTERNS):
+                    mapping['business_unit'] = original
+                    continue
+
+            # Check department (most specific - Subject Department)
             if mapping['department'] is None:
-                if any(pattern in col for pattern in self.DEPARTMENT_PATTERNS):
+                if matches_pattern(col, self.DEPARTMENT_PATTERNS):
                     mapping['department'] = original
                     continue
 
             # Check company
             if mapping['company'] is None:
-                if any(pattern in col for pattern in self.COMPANY_PATTERNS):
+                if matches_pattern(col, self.COMPANY_PATTERNS):
                     mapping['company'] = original
                     continue
 
@@ -287,32 +337,36 @@ class GoalsTableProcessor:
                     mapping['seniority'] = original
                     continue
 
-            # Check goal title columns (e.g., "Goal Title" - short category names)
+            # Check goal category columns FIRST (e.g., "KPI Category" - BSC perspective)
+            # Must check before generic goal patterns since 'kpi' appears in both
+            if any(pattern in col for pattern in self.GOAL_CATEGORY_PATTERNS):
+                mapping['goal_category_columns'].append(original)
+                continue
+
+            # Check goal title columns (e.g., "Goal Title", "KPI Name" - short category names)
             if any(pattern in col for pattern in self.GOAL_TITLE_PATTERNS):
                 mapping['goal_title_columns'].append(original)
                 continue
 
-            # Check goal description columns (e.g., "Goal Description" - the actual detailed goal text)
+            # Check goal description columns (e.g., "Goal Description", "KPI Metric" - detailed goal text)
             if any(pattern in col for pattern in self.GOAL_DESCRIPTION_PATTERNS):
                 mapping['goal_description_columns'].append(original)
                 continue
-
-            # Check generic goal columns (can have multiple: Goal 1, Goal 2, etc.)
-            if any(pattern in col for pattern in self.GOAL_PATTERNS):
-                if not any(pattern in col for pattern in self.GOAL_TITLE_PATTERNS):
-                    if not any(pattern in col for pattern in self.GOAL_DESCRIPTION_PATTERNS):
-                        mapping['goal_columns'].append(original)
-                        continue
 
             # Check goal weight columns
             if any(pattern in col for pattern in self.GOAL_WEIGHT_PATTERNS):
                 mapping['goal_weight_columns'].append(original)
                 continue
 
-            # Check goal category columns
-            if any(pattern in col for pattern in self.GOAL_CATEGORY_PATTERNS):
-                mapping['goal_category_columns'].append(original)
-                continue
+            # Check generic goal columns (can have multiple: Goal 1, Goal 2, etc.)
+            # This is last to avoid matching more specific patterns above
+            if any(pattern in col for pattern in self.GOAL_PATTERNS):
+                # Exclude columns already matched to more specific categories
+                if not any(pattern in col for pattern in self.GOAL_TITLE_PATTERNS):
+                    if not any(pattern in col for pattern in self.GOAL_DESCRIPTION_PATTERNS):
+                        if not any(pattern in col for pattern in self.GOAL_CATEGORY_PATTERNS):
+                            mapping['goal_columns'].append(original)
+                            continue
 
         # If no goal columns found, look for numbered columns or any text columns
         if not mapping['goal_columns']:
@@ -400,6 +454,8 @@ class GoalsTableProcessor:
             employeeName=employee_name,
             jobTitle=self._get_value(row, column_mapping.get('job_title')),
             department=self._get_value(row, column_mapping.get('department')),
+            businessUnit=self._get_value(row, column_mapping.get('business_unit')),
+            group=self._get_value(row, column_mapping.get('group')),
             company=self._get_value(row, column_mapping.get('company')),
             seniorityLevel=self._infer_seniority(
                 self._get_value(row, column_mapping.get('seniority')),
@@ -456,6 +512,8 @@ class GoalsTableProcessor:
             employeeName=employee_name,
             jobTitle=self._get_value(first_row, column_mapping.get('job_title')),
             department=self._get_value(first_row, column_mapping.get('department')),
+            businessUnit=self._get_value(first_row, column_mapping.get('business_unit')),
+            group=self._get_value(first_row, column_mapping.get('group')),
             company=self._get_value(first_row, column_mapping.get('company')),
             seniorityLevel=self._infer_seniority(
                 self._get_value(first_row, column_mapping.get('seniority')),
@@ -806,6 +864,8 @@ class GoalsTableProcessor:
             'employeeName': record.employeeName,
             'jobTitle': record.jobTitle,
             'department': record.department,
+            'businessUnit': record.businessUnit,
+            'group': record.group,
             'company': record.company,
             'seniorityLevel': record.seniorityLevel,
             'goals': record.goals,
@@ -854,6 +914,10 @@ class GoalsTableProcessor:
                 header_parts.append(f"Position: {employee['jobTitle']}")
             if employee.get('company'):
                 header_parts.append(f"Company: {employee['company']}")
+            if employee.get('group'):
+                header_parts.append(f"Group: {employee['group']}")
+            if employee.get('businessUnit'):
+                header_parts.append(f"Business Unit: {employee['businessUnit']}")
             if employee.get('department'):
                 header_parts.append(f"Department: {employee['department']}")
             if employee.get('seniorityLevel'):
@@ -884,6 +948,8 @@ class GoalsTableProcessor:
                     'employeeName': employee.get('employeeName'),
                     'jobTitle': employee.get('jobTitle'),
                     'company': employee.get('company'),
+                    'group': employee.get('group'),
+                    'businessUnit': employee.get('businessUnit'),
                     'department': employee.get('department'),
                     'seniorityLevel': employee.get('seniorityLevel'),
                     # Also include goals in metadata for backward compatibility
