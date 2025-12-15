@@ -832,6 +832,22 @@ class MockAlignmentClient:
             if is_financial_goal and has_currency and has_metrics:
                 is_outcome = True  # Financial targets are measurable outcomes
 
+            # People/HR goals with specific targets are inherently outcome-oriented
+            # Goals measuring retention, engagement, collaboration are Learning & Growth outcomes
+            people_indicators = ['retention', 'engagement', 'collaboration', 'employee', 'talent',
+                                'turnover', 'satisfaction', 'culture', 'workforce', 'headcount']
+            is_people_goal = (
+                goal_text.startswith('[people]') or
+                goal_text.startswith('[hr]') or
+                goal_text.startswith('[learning') or
+                (any(indicator in goal_text for indicator in people_indicators) and
+                 any(indicator in goal_text for indicator in ['target', 'threshold', 'superior', 'score']) and
+                 has_metrics)
+            )
+
+            if is_people_goal and has_metrics:
+                is_outcome = True  # People metrics with targets are measurable outcomes
+
             # Check 2: Alignment (does it map to strategic pillars?)
             is_aligned = False
             aligned_themes = []
@@ -860,6 +876,16 @@ class MockAlignmentClient:
                 if 'Financial' not in aligned_themes and 'financial' not in [t.lower() for t in aligned_themes]:
                     aligned_themes.append('Financial Performance')
                     alignment_evidence.extend(['financial target', 'measurable outcome'])
+
+            # Special check: People/HR goals with specific targets are inherently strategic
+            # They directly contribute to organizational capacity through Learning & Growth perspective
+            if is_people_goal and has_metrics:
+                # People goals with measurable targets (retention, engagement, collaboration scores)
+                # are strategically aligned - they drive organizational capability and culture
+                is_aligned = True
+                if 'People' not in aligned_themes and 'Learning' not in aligned_themes:
+                    aligned_themes.append('People & Culture')
+                    alignment_evidence.extend(['people metric', 'organizational capacity'])
 
             # For other commercial goals without financial targets, check for alignment
             is_commercial = any(ind in goal_text for ind in ['revenue', 'sales', 'quota', 'deal'])
@@ -1426,15 +1452,30 @@ STRATEGIC COVERAGE CHECK
         """
         # Detect goal category for objective assignment
         text_lower = goal_text.lower()
+        has_metrics = any(char.isdigit() for char in goal_text) or '%' in goal_text
+
         is_financial_goal = (
             text_lower.startswith('[financial]') or
-            category.lower() == 'financial' if category else False or
+            (category and category.lower() == 'financial') or
             (any(indicator in text_lower for indicator in ['baseline', 'threshold', 'superior', 'target']) and
              any(curr in text_lower for curr in ['$', 's$', '€', '£']) and
-             any(char.isdigit() for char in goal_text))
+             has_metrics)
         )
 
-        aligned_objectives = self._assign_mock_objectives(goal_num, is_financial=is_financial_goal)
+        # Detect People/HR goals for Learning & Growth perspective
+        people_indicators = ['retention', 'engagement', 'collaboration', 'employee', 'talent',
+                            'turnover', 'satisfaction', 'culture', 'workforce', 'headcount']
+        is_people_goal = (
+            text_lower.startswith('[people]') or
+            text_lower.startswith('[hr]') or
+            text_lower.startswith('[learning') or
+            (category and category.lower() in ['people', 'hr', 'learning', 'talent']) or
+            (any(indicator in text_lower for indicator in people_indicators) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior', 'score']) and
+             has_metrics)
+        )
+
+        aligned_objectives = self._assign_mock_objectives(goal_num, is_financial=is_financial_goal, is_people=is_people_goal)
 
         # Calculate alignment score using weighted formula based on strategy tie-back
         score_breakdown = self._calculate_goal_alignment_score(
@@ -1529,12 +1570,32 @@ STRATEGIC COVERAGE CHECK
         vision_hits = sum(1 for kw in vision_keywords if kw in text_lower)
         mission_hits = sum(1 for kw in mission_keywords if kw in text_lower)
 
+        # Detect People/HR goals for Learning & Growth perspective
+        people_indicators = ['retention', 'engagement', 'collaboration', 'employee', 'talent',
+                            'turnover', 'satisfaction', 'culture', 'workforce', 'headcount']
+        has_metrics = any(char.isdigit() for char in goal_text) or '%' in goal_text
+        is_people_goal = (
+            text_lower.startswith('[people]') or
+            text_lower.startswith('[hr]') or
+            text_lower.startswith('[learning') or
+            (any(indicator in text_lower for indicator in people_indicators) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior', 'score']) and
+             has_metrics)
+        )
+
         # Financial goals with measurable targets inherently support organizational mission
         if is_financial_goal:
             vision_mission_score = 85
             vm_rationale = (
                 f"Financial goals with specific targets (baseline/threshold/superior) directly contribute "
                 f"to organizational success and mission '{self.mission[:40]}...'"
+            )
+        # People/HR goals with measurable targets support organizational capacity
+        elif is_people_goal:
+            vision_mission_score = 85
+            vm_rationale = (
+                f"People goals with specific targets (retention/engagement/collaboration) directly contribute "
+                f"to organizational capacity and mission '{self.mission[:40]}...'"
             )
         elif vision_hits >= 2 or mission_hits >= 2:
             vision_mission_score = 85
@@ -1557,6 +1618,13 @@ STRATEGIC COVERAGE CHECK
             theme_rationale = (
                 "Financial goal with measurable targets directly addresses the Financial perspective "
                 "of the strategic framework. Measurable financial outcomes are core to organizational success."
+            )
+        # People/HR goals with specific targets are inherently aligned with Learning & Growth themes
+        elif is_people_goal:
+            theme_score = 90
+            theme_rationale = (
+                "People goal with measurable targets directly addresses the Learning & Growth perspective "
+                "of the strategic framework. Employee engagement, retention, and culture are core to organizational capacity."
             )
         else:
             for theme in self.theme_names:
@@ -1936,16 +2004,21 @@ STRATEGIC COVERAGE CHECK
 
         return base_recommendations[:5]  # Return top 5
 
-    def _assign_mock_objectives(self, goal_num: int, is_financial: bool = False) -> List[str]:
+    def _assign_mock_objectives(self, goal_num: int, is_financial: bool = False, is_people: bool = False) -> List[str]:
         """Assign mock objective alignments.
 
         Args:
             goal_num: Goal number for cycling through objectives pool
             is_financial: If True, assign financial objectives (F1, F2)
+            is_people: If True, assign learning & growth objectives (L1, L2)
         """
         # Financial goals get financial perspective objectives
         if is_financial:
             return ["F1", "F2"]
+
+        # People/HR goals get learning & growth perspective objectives
+        if is_people:
+            return ["L1", "L2"]
 
         objectives_pool = [
             ["P1", "P3"],
