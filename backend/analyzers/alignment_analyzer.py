@@ -820,6 +820,18 @@ class MockAlignmentClient:
             if has_metrics and any(v in goal_text for v in ['increase', 'reduce', 'grow', 'achieve']):
                 is_outcome = True
 
+            # Financial goals with specific targets are inherently outcome-oriented
+            # Patterns like "S$10.1M", "$5M", "baseline", "threshold", "target" indicate measurable financial outcomes
+            is_financial_goal = (
+                goal_text.startswith('[financial]') or
+                any(indicator in goal_text for indicator in ['baseline', 'threshold', 'superior', 'target']) and
+                any(char.isdigit() for char in goal_text)
+            )
+            has_currency = any(curr in goal_text for curr in ['$', 's$', '€', '£', 'usd', 'sgd'])
+
+            if is_financial_goal and has_currency and has_metrics:
+                is_outcome = True  # Financial targets are measurable outcomes
+
             # Check 2: Alignment (does it map to strategic pillars?)
             is_aligned = False
             aligned_themes = []
@@ -839,9 +851,19 @@ class MockAlignmentClient:
                 is_aligned = True
                 alignment_evidence.extend(obj_matches[:2])
 
-            # Special check: Commercial goals need specific alignment
-            is_commercial = any(ind in goal_text for ind in ['$', 'revenue', 'sales', 'quota', 'deal'])
-            if is_commercial and not aligned_themes:
+            # Special check: Financial goals with specific targets are inherently strategic
+            # They directly contribute to organizational financial success
+            if is_financial_goal and has_currency and has_metrics:
+                # Financial goals with measurable targets (baseline, threshold, superior)
+                # are strategically aligned - they directly drive financial outcomes
+                is_aligned = True
+                if 'Financial' not in aligned_themes and 'financial' not in [t.lower() for t in aligned_themes]:
+                    aligned_themes.append('Financial Performance')
+                    alignment_evidence.extend(['financial target', 'measurable outcome'])
+
+            # For other commercial goals without financial targets, check for alignment
+            is_commercial = any(ind in goal_text for ind in ['revenue', 'sales', 'quota', 'deal'])
+            if is_commercial and not aligned_themes and not is_financial_goal:
                 # Generic commercial goal without specific strategic alignment = misaligned
                 is_aligned = False
 
@@ -1300,6 +1322,28 @@ STRATEGIC COVERAGE CHECK
             if goals:
                 return goals
 
+        # PRIORITY 2.5: Parse category-prefixed goals like "[Financial] Target / Baseline..."
+        # This format is common in SAP SuccessFactors exports
+        category_pattern = re.compile(r'\[([^\]]+)\]\s*(.+?)(?=\[|$)', re.IGNORECASE | re.DOTALL)
+        category_matches = category_pattern.findall(text)
+
+        if category_matches:
+            for cat_match in category_matches:
+                category = cat_match[0].strip()
+                goal_text = cat_match[1].strip()
+                # Clean up goal text - remove trailing whitespace and limit length
+                goal_text = ' '.join(goal_text.split())  # Normalize whitespace
+
+                if goal_text and len(goal_text) > 10:
+                    goal_num += 1
+                    goals.append(self._create_goal_analysis(
+                        goal_num, f"[{category}] {goal_text[:290]}", job_title, seniority, department,
+                        category=category
+                    ))
+
+            if goals:
+                return goals
+
         # PRIORITY 3: Parse from bullet points or numbered lists
         lines = text.split('\n')
         bullet_pattern = re.compile(r'^[\s]*[-•*]\s*(.+)$')
@@ -1380,7 +1424,17 @@ STRATEGIC COVERAGE CHECK
             weight: Optional goal weight from Excel
             category: Optional goal category from Excel
         """
-        aligned_objectives = self._assign_mock_objectives(goal_num)
+        # Detect goal category for objective assignment
+        text_lower = goal_text.lower()
+        is_financial_goal = (
+            text_lower.startswith('[financial]') or
+            category.lower() == 'financial' if category else False or
+            (any(indicator in text_lower for indicator in ['baseline', 'threshold', 'superior', 'target']) and
+             any(curr in text_lower for curr in ['$', 's$', '€', '£']) and
+             any(char.isdigit() for char in goal_text))
+        )
+
+        aligned_objectives = self._assign_mock_objectives(goal_num, is_financial=is_financial_goal)
 
         # Calculate alignment score using weighted formula based on strategy tie-back
         score_breakdown = self._calculate_goal_alignment_score(
@@ -1464,10 +1518,25 @@ STRATEGIC COVERAGE CHECK
         vision_keywords = ['leader', 'excellence', 'innovation', 'value', 'growth', 'customer', 'stakeholder']
         mission_keywords = ['deliver', 'serve', 'achieve', 'enable', 'support', 'improve']
 
+        # Detect if this is a financial goal with specific targets
+        is_financial_goal = (
+            text_lower.startswith('[financial]') or
+            (any(indicator in text_lower for indicator in ['baseline', 'threshold', 'superior', 'target']) and
+             any(curr in text_lower for curr in ['$', 's$', '€', '£']) and
+             any(char.isdigit() for char in goal_text))
+        )
+
         vision_hits = sum(1 for kw in vision_keywords if kw in text_lower)
         mission_hits = sum(1 for kw in mission_keywords if kw in text_lower)
 
-        if vision_hits >= 2 or mission_hits >= 2:
+        # Financial goals with measurable targets inherently support organizational mission
+        if is_financial_goal:
+            vision_mission_score = 85
+            vm_rationale = (
+                f"Financial goals with specific targets (baseline/threshold/superior) directly contribute "
+                f"to organizational success and mission '{self.mission[:40]}...'"
+            )
+        elif vision_hits >= 2 or mission_hits >= 2:
             vision_mission_score = 85
             vm_rationale = f"Goal clearly supports the vision '{self.vision[:50]}...' and mission through explicit strategic language"
         elif vision_hits >= 1 or mission_hits >= 1:
@@ -1482,18 +1551,26 @@ STRATEGIC COVERAGE CHECK
         theme_score = 40  # Default: no theme match
         theme_rationale = "Does not directly address identified strategic themes"
 
-        for theme in self.theme_names:
-            theme_words = theme.lower().split()
-            if any(tw in text_lower for tw in theme_words if len(tw) > 3):
-                theme_score = 85
-                theme_rationale = f"Directly addresses strategic theme: '{theme}'"
-                break
+        # Financial goals with specific targets are inherently aligned with financial themes
+        if is_financial_goal:
+            theme_score = 90
+            theme_rationale = (
+                "Financial goal with measurable targets directly addresses the Financial perspective "
+                "of the strategic framework. Measurable financial outcomes are core to organizational success."
+            )
+        else:
+            for theme in self.theme_names:
+                theme_words = theme.lower().split()
+                if any(tw in text_lower for tw in theme_words if len(tw) > 3):
+                    theme_score = 85
+                    theme_rationale = f"Directly addresses strategic theme: '{theme}'"
+                    break
 
-        # Also check for common theme-related terms
-        theme_indicators = ['efficiency', 'customer', 'quality', 'innovation', 'digital', 'sustainability', 'growth']
-        if theme_score < 85 and any(ind in text_lower for ind in theme_indicators):
-            theme_score = 65
-            theme_rationale = "Partially related to strategic themes through operational focus"
+            # Also check for common theme-related terms
+            theme_indicators = ['efficiency', 'customer', 'quality', 'innovation', 'digital', 'sustainability', 'growth']
+            if theme_score < 85 and any(ind in text_lower for ind in theme_indicators):
+                theme_score = 65
+                theme_rationale = "Partially related to strategic themes through operational focus"
 
         # 4. Role-Appropriate Translation (10% weight)
         role_scores = {
@@ -1859,8 +1936,17 @@ STRATEGIC COVERAGE CHECK
 
         return base_recommendations[:5]  # Return top 5
 
-    def _assign_mock_objectives(self, goal_num: int) -> List[str]:
-        """Assign mock objective alignments."""
+    def _assign_mock_objectives(self, goal_num: int, is_financial: bool = False) -> List[str]:
+        """Assign mock objective alignments.
+
+        Args:
+            goal_num: Goal number for cycling through objectives pool
+            is_financial: If True, assign financial objectives (F1, F2)
+        """
+        # Financial goals get financial perspective objectives
+        if is_financial:
+            return ["F1", "F2"]
+
         objectives_pool = [
             ["P1", "P3"],
             ["P2", "L1"],
