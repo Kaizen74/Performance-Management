@@ -753,98 +753,106 @@ class GoalsTableProcessor:
     ) -> Optional[str]:
         """
         Infer seniority level using three categories:
-        - 'individual contributor': No managerial element in title, or entry-level grades
-        - 'team leader': Has managerial element (manager, supervisor, team lead, etc.)
-        - 'senior management': Senior managerial roles with direct reports who are team leaders
+        - 'individual contributor': Entry-level with no managerial responsibility
+        - 'team leader': Managerial roles with direct reports
+        - 'senior management': Executive/senior leadership roles
 
         Priority: Grade Group > Pay Scale > Job Title
-        Grade Group hierarchy: SVP > VP > AVP > Senior Manager > Manager > AO (entry)
-        Pay Scale hierarchy: SVP > H9...H1 > E3...E1 (entry)
+
+        Grade Group mapping:
+        - Senior Management: CEO, SVP, Global Head
+        - Team Leader: AVP, SM (Senior Manager), MGR (Manager)
+        - Individual Contributor: AO (Associate Officer)
+
+        Pay Scale (Salary Group) mapping:
+        - Senior Management: CEO, SVP, H8, H9
+        - Team Leader: H1-H7
+        - Individual Contributor: E1-E3
         """
+        import re
 
         # FIRST: Check Grade Group (Subject Grade Group) - most explicit seniority indicator
+        # NOTE: VP is NOT in Grade Group list - VP seniority is determined by Pay Scale (H8/H9 = Sr Mgmt, H1-H7 = Team Leader)
         if grade_group:
             grade_lower = grade_group.lower().strip()
+            # Remove parenthetical codes like "(VP)" from "VP (VP)"
+            grade_base = grade_lower.split('(')[0].strip()
 
-            # Senior Management grades
-            if grade_lower in ['svp', 'vp', 'avp'] or 'senior vice' in grade_lower or 'vice president' in grade_lower:
+            # Senior Management grades: CEO, SVP, Global Head
+            if grade_base in ['ceo', 'svp', 'global head'] or 'ceo' in grade_lower or 'svp' in grade_lower or 'global head' in grade_lower:
                 return 'senior management'
 
-            # Team Leader grades
-            if grade_lower in ['senior manager', 'manager'] or 'manager' in grade_lower:
+            # Team Leader grades: AVP, SM (Senior Manager), MGR (Manager)
+            # NOTE: VP is NOT included here - VP seniority is determined by payscale
+            if grade_base in ['avp', 'sm', 'mgr', 'senior manager', 'manager']:
+                return 'team leader'
+            # Check for AVP, SM, MGR patterns in full grade string
+            if any(x in grade_lower for x in ['avp', 'senior manager', 'mgr']):
+                return 'team leader'
+            # Check for 'manager' but exclude 'senior manager' (already checked) and ensure not matching partial words
+            if 'manager' in grade_lower and 'senior manager' not in grade_lower:
                 return 'team leader'
 
-            # Individual Contributor / Entry grades
-            if grade_lower in ['ao', 'associate', 'entry'] or 'associate' in grade_lower:
+            # Individual Contributor grades: AO (Associate Officer)
+            if grade_base in ['ao', 'associate'] or 'associate' in grade_lower:
+                return 'individual contributor'
+            # Check for 'ao' as standalone (not part of another word)
+            if grade_base == 'ao' or ' ao' in grade_lower or grade_lower.endswith(' ao'):
                 return 'individual contributor'
 
-        # SECOND: Check Pay Scale (Subject Payscale Group)
+        # SECOND: Check Pay Scale (Subject Payscale Group / Salary Group)
         if payscale:
             pay_lower = payscale.lower().strip()
 
-            # Senior Management pay scales (SVP)
-            if pay_lower == 'svp' or 'svp' in pay_lower:
+            # Senior Management pay scales: CEO, SVP, H8, H9
+            if 'ceo' in pay_lower or 'svp' in pay_lower:
                 return 'senior management'
 
-            # H-band grades (H9 is senior, H1 is more junior within the H band)
-            # H9-H7: Senior Management, H6-H4: Team Leader, H3-H1: Senior IC
-            import re
-            h_match = re.match(r'h(\d+)', pay_lower)
+            # H-band grades
+            h_match = re.search(r'h(\d+)', pay_lower)
             if h_match:
                 h_level = int(h_match.group(1))
-                if h_level >= 7:  # H7, H8, H9
+                if h_level >= 8:  # H8, H9 = Senior Management
                     return 'senior management'
-                elif h_level >= 4:  # H4, H5, H6
+                else:  # H1-H7 = Team Leader
                     return 'team leader'
-                else:  # H1, H2, H3
-                    return 'individual contributor'
 
-            # E-band grades (entry level: E1 most junior, E3 most senior in E-band)
-            e_match = re.match(r'e(\d+)', pay_lower)
+            # E-band grades (E1-E3): Individual Contributor
+            e_match = re.search(r'e(\d+)', pay_lower)
             if e_match:
-                # All E-band are individual contributors (entry level)
                 return 'individual contributor'
 
-        # THIRD: Infer from Job Title
+        # THIRD: Infer from Job Title (fallback)
         if not job_title:
-            # Default to individual contributor if no job title
             return 'individual contributor'
 
         lower = job_title.lower()
 
-        # SENIOR MANAGEMENT indicators - these roles typically have team leaders reporting to them
-        # Order matters - check these FIRST before team leader patterns
+        # SENIOR MANAGEMENT indicators
         senior_management_patterns = [
-            # C-suite
             'ceo', 'cfo', 'cto', 'coo', 'cio', 'cmo', 'chief',
-            # Director level
-            'director',
-            # VP level
-            'svp', 'senior vice president', 'vice president', 'vp ',
-            # AVP level
-            'avp', 'assistant vice president',
-            # Country/Regional/Global leadership
-            'country manager', 'regional manager', 'general manager',
+            'svp', 'senior vice president',
             'global head', 'regional head', 'country head',
-            'head of', 'managing director',
-            # President
-            'president'
+            'managing director', 'president'
         ]
 
         for pattern in senior_management_patterns:
             if pattern in lower:
                 return 'senior management'
 
-        # TEAM LEADER indicators - managerial roles with direct reports
+        # TEAM LEADER indicators: AVP, VP, Director, Manager, etc.
         team_leader_patterns = [
-            'senior manager',  # Senior Manager (check before generic 'manager')
-            'manager',        # Any manager role
-            'supervisor',     # Supervisor roles
-            'team lead',      # Team lead
-            'team leader',    # Team leader
-            'head',           # Head (without country/regional/global prefix - those are caught above)
-            'lead ',          # Lead with space (to avoid "leader" false positive)
-            ' lead',          # Lead at end of title
+            'vice president', 'vp ',
+            'avp', 'assistant vice president',
+            'director',
+            'country manager', 'regional manager', 'general manager',
+            'head of',
+            'senior manager',
+            'manager',
+            'supervisor',
+            'team lead', 'team leader',
+            'head',
+            'lead ', ' lead'
         ]
 
         for pattern in team_leader_patterns:
@@ -852,9 +860,6 @@ class GoalsTableProcessor:
                 return 'team leader'
 
         # INDIVIDUAL CONTRIBUTOR - no managerial element detected
-        # This includes: Engineers, Specialists, Ambassadors, Analysts,
-        # Sales Executives (Executive here is a sales role, not management),
-        # Application Specialists, Field Service Engineers, AO (Associate) roles, etc.
         return 'individual contributor'
 
     def _record_to_dict(self, record: EmployeeGoalRecord) -> Dict[str, Any]:
