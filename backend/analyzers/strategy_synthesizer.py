@@ -390,23 +390,32 @@ class MockClaudeClient:
             )
 
             if is_vision_header:
-                # Look at the next few lines for the actual vision text
-                for j in range(i + 1, min(i + 6, len(lines))):
+                # Collect multiple lines after header until we hit a delimiter or new section
+                vision_parts = []
+                for j in range(i + 1, min(i + 10, len(lines))):
                     next_line = lines[j].strip()
-                    # Skip empty lines
-                    if not next_line:
+                    # Skip empty lines at the beginning
+                    if not next_line and not vision_parts:
                         continue
-                    # Found a substantive line - this is likely the vision statement
-                    if len(next_line) > 25:
-                        vision = next_line.strip('"\'')
-                        # Make sure it's not another header
-                        if not (next_line.lower().endswith(':') and len(next_line) < 30):
-                            return vision
-                    # Even shorter lines might be the vision if they look complete
-                    elif len(next_line) > 15 and next_line[0].isupper():
-                        # Check if it looks like a complete statement
-                        if '.' in next_line or ',' in next_line or next_line.endswith('"'):
-                            return next_line.strip('"\'')
+                    # Stop at empty line after we've collected content
+                    if not next_line and vision_parts:
+                        break
+                    # Stop at new section headers
+                    if next_line.lower().endswith(':') and len(next_line) < 40:
+                        break
+                    if any(h in next_line.lower() for h in ['mission', 'purpose', 'values', 'strategy']):
+                        if len(next_line) < 40:
+                            break
+                    # Add this line to vision
+                    vision_parts.append(next_line.strip('"\''))
+
+                if vision_parts:
+                    # Join lines - if they end with comma or no punctuation, use space
+                    vision = ' '.join(vision_parts)
+                    # Clean up any double spaces
+                    vision = re.sub(r'\s+', ' ', vision).strip()
+                    if len(vision) > 25:
+                        return vision
 
         # Look for pattern "Vision:" followed by text on same line or next line
         patterns = [
@@ -454,16 +463,38 @@ class MockClaudeClient:
             line_lower = line_clean.lower()
 
             # Check if this line is a mission/purpose header
-            if (('mission' in line_lower or 'purpose' in line_lower) and
-                ('statement' in line_lower or len(line_clean) < 30)):
-                # Look at the next few lines for the actual statement
-                for j in range(i + 1, min(i + 5, len(lines))):
+            is_purpose_header = (
+                ('mission' in line_lower or 'purpose' in line_lower) and
+                ('statement' in line_lower or len(line_clean) < 40)
+            )
+
+            if is_purpose_header:
+                # Collect multiple lines after header until we hit a delimiter or new section
+                mission_parts = []
+                for j in range(i + 1, min(i + 10, len(lines))):
                     next_line = lines[j].strip()
-                    if len(next_line) > 20:
-                        # This is likely the mission/purpose statement
-                        mission = next_line.strip('"\'')
-                        if len(mission) > 20:
-                            return mission
+                    # Skip empty lines at the beginning
+                    if not next_line and not mission_parts:
+                        continue
+                    # Stop at empty line after we've collected content
+                    if not next_line and mission_parts:
+                        break
+                    # Stop at new section headers
+                    if next_line.lower().endswith(':') and len(next_line) < 40:
+                        break
+                    if any(h in next_line.lower() for h in ['vision', 'values', 'strategy', 'objective']):
+                        if len(next_line) < 40:
+                            break
+                    # Add this line to mission
+                    mission_parts.append(next_line.strip('"\''))
+
+                if mission_parts:
+                    # Join lines
+                    mission = ' '.join(mission_parts)
+                    # Clean up any double spaces
+                    mission = re.sub(r'\s+', ' ', mission).strip()
+                    if len(mission) > 15:
+                        return mission
 
         # Look for explicit patterns
         patterns = [
@@ -509,7 +540,10 @@ class MockClaudeClient:
         text_lower = text.lower()
         lines = text.split('\n')
 
-        # Common corporate values - expanded list including SATS values
+        # SATS specific values - these are the exact 5 values to look for
+        sats_values = ['safety', 'customer focus', 'respect', 'excellence', 'teamwork']
+
+        # Common corporate values - expanded list
         common_values = [
             # SATS specific values
             'safety', 'customer focus', 'respect', 'excellence', 'teamwork',
@@ -517,10 +551,37 @@ class MockClaudeClient:
             'integrity', 'innovation', 'collaboration', 'accountability',
             'transparency', 'sustainability', 'quality', 'diversity',
             'inclusion', 'trust', 'agility', 'passion', 'empowerment',
-            'leadership', 'commitment', 'responsibility', 'ethics',
-            'professionalism', 'continuous improvement', 'service excellence',
-            'people', 'performance', 'growth', 'caring'
+            'commitment', 'responsibility', 'ethics',
+            'professionalism', 'continuous improvement',
+            'people', 'growth', 'caring'
         ]
+
+        # First, specifically look for "SATS People Values" or similar SATS-specific section
+        for i, line in enumerate(lines):
+            line_clean = line.strip()
+            line_lower = line_clean.lower()
+
+            # Look for SATS People Values header
+            if ('sats' in line_lower and 'value' in line_lower) or \
+               ('people values' in line_lower) or \
+               ('our values' in line_lower and 'sats' in text_lower[:text_lower.find(line_lower) + 100] if line_lower in text_lower else False):
+
+                # Look for the 5 SATS values in the next several lines
+                found_sats_values = []
+                for j in range(i, min(i + 20, len(lines))):
+                    check_line = lines[j].strip().lower()
+                    for sats_val in sats_values:
+                        if sats_val in check_line and sats_val.title() not in found_sats_values:
+                            found_sats_values.append(sats_val.title())
+
+                # If we found at least 3 of the 5 SATS values, use them
+                if len(found_sats_values) >= 3:
+                    # Return in the correct order
+                    ordered_values = []
+                    for sv in sats_values:
+                        if sv.title() in found_sats_values:
+                            ordered_values.append(sv.title())
+                    return ordered_values if ordered_values else found_sats_values
 
         # Look for explicit values section - "Our Values", "Core Values", "People Values", etc.
         in_values_section = False
@@ -532,7 +593,7 @@ class MockClaudeClient:
 
             # Detect start of values section (header line)
             is_values_header = (
-                ('values' in line_lower and len(line_clean) < 60) or
+                ('values' in line_lower and len(line_clean) < 60 and 'value' != line_lower) or
                 'core values' in line_lower or
                 'our values' in line_lower or
                 'people values' in line_lower or
@@ -573,7 +634,7 @@ class MockClaudeClient:
                 if value_name and 2 < len(value_name) < 50:
                     value_lower = value_name.lower()
 
-                    # Check if it matches known values
+                    # Check if it matches known values (exact or contains)
                     is_known_value = any(val == value_lower or val in value_lower for val in common_values)
 
                     # Or check if it looks like a value name (capitalized, short phrase)
@@ -583,10 +644,12 @@ class MockClaudeClient:
 
                     # Accept if known value or looks like a value name
                     if is_known_value or (is_capitalized and is_short_phrase and word_count >= 1):
-                        # Avoid duplicates and exclude things that look like headers
+                        # Avoid duplicates and exclude things that look like headers or other content
                         if (value_name.lower() not in [v.lower() for v in values] and
                             not value_name.lower().endswith('values') and
-                            not value_name.lower().startswith('sats')):
+                            not value_name.lower().startswith('sats') and
+                            not value_name.lower().startswith('our ') and
+                            value_name.lower() not in ['leadership', 'service excellence', 'performance']):  # Exclude common false positives
                             values.append(value_name)
 
                 # Detect end of values section (new section header or too many lines)
@@ -597,37 +660,38 @@ class MockClaudeClient:
                     'value' not in line_lower and lines_since_start > 2):
                     break
 
-        # If no explicit values section found, look for value mentions in context
+        # If found values, return them
+        if values:
+            return values[:10]
+
+        # Fallback: Look for SATS values anywhere in document
+        found_sats = []
+        for sats_val in sats_values:
+            if sats_val in text_lower:
+                found_sats.append(sats_val.title())
+        if len(found_sats) >= 3:
+            return found_sats
+
+        # Final fallback: Look for value mentions in context
+        for value in common_values:
+            if value in text_lower:
+                # Check if it's mentioned in a values context
+                value_patterns = [
+                    rf'value[s]?[:\s].*\b{value}\b',
+                    rf'\b{value}\b.*value',
+                    rf'core.*\b{value}\b',
+                    rf'we (?:value|believe in).*\b{value}\b',
+                ]
+                for pattern in value_patterns:
+                    if re.search(pattern, text_lower):
+                        if value.title() not in values:
+                            values.append(value.title())
+                        break
+
         if not values:
-            for value in common_values:
-                if value in text_lower:
-                    # Check if it's mentioned in a values context
-                    value_patterns = [
-                        rf'value[s]?[:\s].*\b{value}\b',
-                        rf'\b{value}\b.*value',
-                        rf'core.*\b{value}\b',
-                        rf'we (?:value|believe in).*\b{value}\b',
-                        rf'our \b{value}\b',
-                    ]
-                    for pattern in value_patterns:
-                        if re.search(pattern, text_lower):
-                            if value.title() not in values:
-                                values.append(value.title())
-                            break
-
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_values = []
-        for v in values:
-            v_lower = v.lower()
-            if v_lower not in seen:
-                seen.add(v_lower)
-                unique_values.append(v)
-
-        if not unique_values:
             return ["Values not explicitly stated in uploaded documents"]
 
-        return unique_values[:10]  # Cap at 10 values
+        return values[:10]  # Cap at 10 values
 
     def _extract_themes(self, text: str) -> List[Dict[str, Any]]:
         """Extract strategic themes from document text."""
