@@ -17,6 +17,7 @@ class EmployeeGoalRecord:
     employeeName: str
     jobTitle: Optional[str]
     department: Optional[str]
+    company: Optional[str]
     seniorityLevel: Optional[str]
     goals: List[Dict[str, str]]
     rawData: Dict[str, Any]
@@ -29,29 +30,52 @@ class GoalsTableProcessor:
     """
 
     # Common column name patterns for employee identification
+    # Includes standard HR system exports AND "Subject" prefix patterns (e.g., from SAP SuccessFactors)
     EMPLOYEE_NAME_PATTERNS = [
+        'subject full name', 'subject name',  # SAP SuccessFactors "Subject" patterns
         'employee name', 'employee', 'name', 'full name', 'worker',
         'employee_name', 'emp_name', 'worker_name', 'associate'
     ]
 
     EMPLOYEE_ID_PATTERNS = [
+        'subject employee id', 'subject id',  # SAP SuccessFactors "Subject" patterns
         'employee id', 'employee_id', 'emp id', 'emp_id', 'worker id',
         'worker_id', 'id', 'employee number', 'emp_number', 'badge'
     ]
 
     JOB_TITLE_PATTERNS = [
+        'subject title',  # SAP SuccessFactors - Job/Position Title
         'job title', 'title', 'position', 'role', 'job_title',
         'position_title', 'job', 'designation'
     ]
 
     DEPARTMENT_PATTERNS = [
+        'subject department', 'subject business unit',  # SAP SuccessFactors
         'department', 'dept', 'team', 'division', 'org unit',
-        'organization', 'business unit', 'cost center', 'group'
+        'organization', 'business unit', 'cost center'
     ]
 
+    # Company patterns - for organizational context
+    COMPANY_PATTERNS = [
+        'subject company', 'company', 'organization', 'entity', 'legal entity'
+    ]
+
+    # Grade/Seniority patterns - includes grade groups and pay scale
     SENIORITY_PATTERNS = [
+        'subject grade group', 'subject payscale group',  # SAP SuccessFactors grade indicators
+        'grade group', 'payscale group', 'pay scale',
         'level', 'grade', 'seniority', 'job level', 'career level',
-        'band', 'tier', 'management level', 'job_level'
+        'band', 'tier', 'management level', 'job_level', 'job grade'
+    ]
+
+    # Grade group patterns for explicit grade detection (SVP, VP, AVP, etc.)
+    GRADE_GROUP_PATTERNS = [
+        'subject grade group', 'grade group', 'job grade', 'position grade'
+    ]
+
+    # Pay scale patterns for salary grade (SVP, H9-H1, E3-E1)
+    PAYSCALE_PATTERNS = [
+        'subject payscale group', 'payscale group', 'pay scale', 'salary grade', 'pay grade'
     ]
 
     GOAL_PATTERNS = [
@@ -60,12 +84,17 @@ class GoalsTableProcessor:
     ]
 
     # Goal title patterns - these are category/short title columns, not the main goal text
+    # Includes KPI Name from SAP SuccessFactors
     GOAL_TITLE_PATTERNS = [
+        'kpi name',  # SAP SuccessFactors - Goal Title
         'goal title', 'goal_title', 'objective title', 'goal name',
         'objective name', 'goal type', 'goal category'
     ]
 
+    # Goal description patterns - the actual detailed goal/objective text
+    # Includes KPI Metric from SAP SuccessFactors
     GOAL_DESCRIPTION_PATTERNS = [
+        'kpi metric',  # SAP SuccessFactors - Goal Description/Objectives
         'goal description', 'description', 'details', 'notes',
         'goal_detail', 'objective_detail', 'measure', 'success criteria',
         'goal_description', 'objective_description'
@@ -75,7 +104,10 @@ class GoalsTableProcessor:
         'weight', 'weightage', 'importance', 'priority', '%', 'percent'
     ]
 
+    # Goal category patterns - maps to BSC perspectives
+    # Includes KPI Category from SAP SuccessFactors
     GOAL_CATEGORY_PATTERNS = [
+        'kpi category',  # SAP SuccessFactors - Goal Category (similar to BSC)
         'category', 'type', 'goal type', 'goal category', 'pillar',
         'perspective', 'focus area', 'strategic theme'
     ]
@@ -183,20 +215,23 @@ class GoalsTableProcessor:
             'employee_id': None,
             'job_title': None,
             'department': None,
+            'company': None,  # Company/Organization
             'seniority': None,
+            'grade_group': None,  # Subject Grade Group (SVP, VP, AVP, etc.)
+            'payscale': None,  # Subject Payscale Group (H9-H1, E3-E1)
             'goal_columns': [],
-            'goal_title_columns': [],  # Short title/category columns like "Goal Title"
-            'goal_description_columns': [],  # Detailed goal text columns like "Goal Description"
+            'goal_title_columns': [],  # Short title/category columns like "Goal Title" or "KPI Name"
+            'goal_description_columns': [],  # Detailed goal text columns like "Goal Description" or "KPI Metric"
             'goal_weight_columns': [],
-            'goal_category_columns': [],
-            'all_goal_text_columns': []  # ALL columns containing 'goal' for flexible text synthesis
+            'goal_category_columns': [],  # BSC perspective categories like "KPI Category"
+            'all_goal_text_columns': []  # ALL columns containing 'goal' or 'kpi' for flexible text synthesis
         }
 
-        # First pass: identify all columns with 'goal' in the name for flexible synthesis
+        # First pass: identify all columns with 'goal', 'kpi', or 'objective' in the name for flexible synthesis
         for i, col in enumerate(columns):
             original = original_columns[i]
-            # Capture ANY column with 'goal' or 'objective' in name (except weight/weightage)
-            if ('goal' in col or 'objective' in col) and not any(w in col for w in ['weight', 'weightage', '%', 'percent']):
+            # Capture ANY column with 'goal', 'kpi', or 'objective' in name (except weight/weightage)
+            if ('goal' in col or 'objective' in col or 'kpi' in col) and not any(w in col for w in ['weight', 'weightage', '%', 'percent']):
                 # Check if column contains text data (not just numbers)
                 if self._is_text_column(df, original):
                     mapping['all_goal_text_columns'].append(original)
@@ -228,7 +263,25 @@ class GoalsTableProcessor:
                     mapping['department'] = original
                     continue
 
-            # Check seniority
+            # Check company
+            if mapping['company'] is None:
+                if any(pattern in col for pattern in self.COMPANY_PATTERNS):
+                    mapping['company'] = original
+                    continue
+
+            # Check grade group (Subject Grade Group - SVP, VP, AVP, etc.)
+            if mapping['grade_group'] is None:
+                if any(pattern in col for pattern in self.GRADE_GROUP_PATTERNS):
+                    mapping['grade_group'] = original
+                    continue
+
+            # Check payscale (Subject Payscale Group - H9-H1, E3-E1)
+            if mapping['payscale'] is None:
+                if any(pattern in col for pattern in self.PAYSCALE_PATTERNS):
+                    mapping['payscale'] = original
+                    continue
+
+            # Check seniority (generic level/grade)
             if mapping['seniority'] is None:
                 if any(pattern in col for pattern in self.SENIORITY_PATTERNS):
                     mapping['seniority'] = original
@@ -347,9 +400,12 @@ class GoalsTableProcessor:
             employeeName=employee_name,
             jobTitle=self._get_value(row, column_mapping.get('job_title')),
             department=self._get_value(row, column_mapping.get('department')),
+            company=self._get_value(row, column_mapping.get('company')),
             seniorityLevel=self._infer_seniority(
                 self._get_value(row, column_mapping.get('seniority')),
-                self._get_value(row, column_mapping.get('job_title'))
+                self._get_value(row, column_mapping.get('job_title')),
+                self._get_value(row, column_mapping.get('grade_group')),
+                self._get_value(row, column_mapping.get('payscale'))
             ),
             goals=goals,
             rawData=row.to_dict()
@@ -400,9 +456,12 @@ class GoalsTableProcessor:
             employeeName=employee_name,
             jobTitle=self._get_value(first_row, column_mapping.get('job_title')),
             department=self._get_value(first_row, column_mapping.get('department')),
+            company=self._get_value(first_row, column_mapping.get('company')),
             seniorityLevel=self._infer_seniority(
                 self._get_value(first_row, column_mapping.get('seniority')),
-                self._get_value(first_row, column_mapping.get('job_title'))
+                self._get_value(first_row, column_mapping.get('job_title')),
+                self._get_value(first_row, column_mapping.get('grade_group')),
+                self._get_value(first_row, column_mapping.get('payscale'))
             ),
             goals=all_goals,
             rawData=first_row.to_dict()
@@ -433,11 +492,22 @@ class GoalsTableProcessor:
             if text and len(text) > 2:
                 # Store column name and text for intelligent combining
                 col_lower = str(col).lower()
+                # KPI Name = Goal Title (short category)
+                # KPI Metric = Goal Description (detailed objectives)
+                # KPI Category = BSC perspective category
+                is_title = any(p in col_lower for p in ['kpi name', 'title', 'name', 'type'])
+                is_description = any(p in col_lower for p in ['kpi metric', 'description', 'detail', 'measure', 'criteria', 'metric'])
+                is_category = any(p in col_lower for p in ['kpi category', 'category', 'perspective'])
+
+                # If it's a category column, don't include in text synthesis
+                if is_category:
+                    continue
+
                 all_goal_texts.append({
                     'column': col,
                     'text': text,
-                    'is_title': any(p in col_lower for p in ['title', 'name', 'type', 'category']),
-                    'is_description': any(p in col_lower for p in ['description', 'detail', 'measure', 'criteria'])
+                    'is_title': is_title and not is_description,  # KPI Name is title
+                    'is_description': is_description  # KPI Metric is description
                 })
 
         # If we have multiple goal-related columns, combine them intelligently
@@ -470,12 +540,14 @@ class GoalsTableProcessor:
             if combined_parts:
                 goal_text = ' | '.join(combined_parts)
 
-                # Get category from title column (only if title wasn't used as main text)
+                # Get category - prioritize KPI Category / category columns (BSC perspective)
                 category = ''
-                if titles and titles[0]['text'] not in combined_parts:
-                    category = titles[0]['text']
-                elif category_cols:
+                if category_cols:
+                    # Use KPI Category column first (maps to BSC perspective)
                     category = self._get_value(row, category_cols[0]) or ''
+                elif titles and titles[0]['text'] not in combined_parts:
+                    # Fall back to title column if title wasn't used as main text
+                    category = titles[0]['text']
 
                 # Get weight
                 weight = ''
@@ -503,13 +575,16 @@ class GoalsTableProcessor:
                         'category': ''
                     }
 
-                    # Use goal title as category/title if available
-                    if i < len(title_cols):
+                    # Prioritize KPI Category / category columns for BSC perspective
+                    if i < len(category_cols):
+                        goal['category'] = self._get_value(row, category_cols[i]) or ''
+                    elif len(category_cols) == 1:
+                        goal['category'] = self._get_value(row, category_cols[0]) or ''
+                    # Fall back to title columns
+                    elif i < len(title_cols):
                         goal['category'] = self._get_value(row, title_cols[i]) or ''
                     elif len(title_cols) == 1:
                         goal['category'] = self._get_value(row, title_cols[0]) or ''
-                    elif i < len(category_cols):
-                        goal['category'] = self._get_value(row, category_cols[i]) or ''
 
                     # Get weight
                     if i < len(weight_cols):
@@ -536,8 +611,11 @@ class GoalsTableProcessor:
                     if i < len(weight_cols):
                         goal['weight'] = self._get_value(row, weight_cols[i]) or ''
 
+                    # Prioritize KPI Category for BSC perspective
                     if i < len(category_cols):
                         goal['category'] = self._get_value(row, category_cols[i]) or ''
+                    elif len(category_cols) == 1:
+                        goal['category'] = self._get_value(row, category_cols[0]) or ''
                     elif i < len(title_cols):
                         goal['category'] = self._get_value(row, title_cols[i]) or ''
 
@@ -611,14 +689,65 @@ class GoalsTableProcessor:
     def _infer_seniority(
         self,
         seniority_value: Optional[str],
-        job_title: Optional[str]
+        job_title: Optional[str],
+        grade_group: Optional[str] = None,
+        payscale: Optional[str] = None
     ) -> Optional[str]:
         """
-        Infer seniority level from job title using three categories:
-        - 'individual contributor': No managerial element in title
+        Infer seniority level using three categories:
+        - 'individual contributor': No managerial element in title, or entry-level grades
         - 'team leader': Has managerial element (manager, supervisor, team lead, etc.)
         - 'senior management': Senior managerial roles with direct reports who are team leaders
+
+        Priority: Grade Group > Pay Scale > Job Title
+        Grade Group hierarchy: SVP > VP > AVP > Senior Manager > Manager > AO (entry)
+        Pay Scale hierarchy: SVP > H9...H1 > E3...E1 (entry)
         """
+
+        # FIRST: Check Grade Group (Subject Grade Group) - most explicit seniority indicator
+        if grade_group:
+            grade_lower = grade_group.lower().strip()
+
+            # Senior Management grades
+            if grade_lower in ['svp', 'vp', 'avp'] or 'senior vice' in grade_lower or 'vice president' in grade_lower:
+                return 'senior management'
+
+            # Team Leader grades
+            if grade_lower in ['senior manager', 'manager'] or 'manager' in grade_lower:
+                return 'team leader'
+
+            # Individual Contributor / Entry grades
+            if grade_lower in ['ao', 'associate', 'entry'] or 'associate' in grade_lower:
+                return 'individual contributor'
+
+        # SECOND: Check Pay Scale (Subject Payscale Group)
+        if payscale:
+            pay_lower = payscale.lower().strip()
+
+            # Senior Management pay scales (SVP)
+            if pay_lower == 'svp' or 'svp' in pay_lower:
+                return 'senior management'
+
+            # H-band grades (H9 is senior, H1 is more junior within the H band)
+            # H9-H7: Senior Management, H6-H4: Team Leader, H3-H1: Senior IC
+            import re
+            h_match = re.match(r'h(\d+)', pay_lower)
+            if h_match:
+                h_level = int(h_match.group(1))
+                if h_level >= 7:  # H7, H8, H9
+                    return 'senior management'
+                elif h_level >= 4:  # H4, H5, H6
+                    return 'team leader'
+                else:  # H1, H2, H3
+                    return 'individual contributor'
+
+            # E-band grades (entry level: E1 most junior, E3 most senior in E-band)
+            e_match = re.match(r'e(\d+)', pay_lower)
+            if e_match:
+                # All E-band are individual contributors (entry level)
+                return 'individual contributor'
+
+        # THIRD: Infer from Job Title
         if not job_title:
             # Default to individual contributor if no job title
             return 'individual contributor'
@@ -634,6 +763,8 @@ class GoalsTableProcessor:
             'director',
             # VP level
             'svp', 'senior vice president', 'vice president', 'vp ',
+            # AVP level
+            'avp', 'assistant vice president',
             # Country/Regional/Global leadership
             'country manager', 'regional manager', 'general manager',
             'global head', 'regional head', 'country head',
@@ -648,6 +779,7 @@ class GoalsTableProcessor:
 
         # TEAM LEADER indicators - managerial roles with direct reports
         team_leader_patterns = [
+            'senior manager',  # Senior Manager (check before generic 'manager')
             'manager',        # Any manager role
             'supervisor',     # Supervisor roles
             'team lead',      # Team lead
@@ -664,7 +796,7 @@ class GoalsTableProcessor:
         # INDIVIDUAL CONTRIBUTOR - no managerial element detected
         # This includes: Engineers, Specialists, Ambassadors, Analysts,
         # Sales Executives (Executive here is a sales role, not management),
-        # Application Specialists, Field Service Engineers, etc.
+        # Application Specialists, Field Service Engineers, AO (Associate) roles, etc.
         return 'individual contributor'
 
     def _record_to_dict(self, record: EmployeeGoalRecord) -> Dict[str, Any]:
@@ -674,6 +806,7 @@ class GoalsTableProcessor:
             'employeeName': record.employeeName,
             'jobTitle': record.jobTitle,
             'department': record.department,
+            'company': record.company,
             'seniorityLevel': record.seniorityLevel,
             'goals': record.goals,
             'goalCount': len(record.goals)
@@ -719,6 +852,8 @@ class GoalsTableProcessor:
             header_parts = [f"Employee: {employee.get('employeeName', 'Unknown')}"]
             if employee.get('jobTitle'):
                 header_parts.append(f"Position: {employee['jobTitle']}")
+            if employee.get('company'):
+                header_parts.append(f"Company: {employee['company']}")
             if employee.get('department'):
                 header_parts.append(f"Department: {employee['department']}")
             if employee.get('seniorityLevel'):
@@ -748,6 +883,7 @@ class GoalsTableProcessor:
                 'employeeMetadata': {
                     'employeeName': employee.get('employeeName'),
                     'jobTitle': employee.get('jobTitle'),
+                    'company': employee.get('company'),
                     'department': employee.get('department'),
                     'seniorityLevel': employee.get('seniorityLevel'),
                     # Also include goals in metadata for backward compatibility
