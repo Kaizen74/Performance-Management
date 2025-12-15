@@ -948,6 +948,57 @@ class MockAlignmentClient:
                 # Generic commercial goal without specific strategic alignment = misaligned
                 is_aligned = False
 
+            # Check 3: Run vs Change Analysis
+            # Determine if this goal is about "Running the Business" (BAU/maintenance)
+            # or "Changing the Business" (transformation/growth)
+            run_indicators = [
+                # Maintenance/Compliance indicators
+                'maintain', 'retention', 'compliance', 'audit', 'infringement', 'breach',
+                'violation', 'incident', 'injury', 'accident', 'security',
+                # Steady-state performance indicators (preventing failure)
+                'punctuality', 'on-time', 'delay rate', 'passing rate',
+                # Budget maintenance
+                'ebit', 'budget', 'baseline',
+                # People maintenance
+                'engagement score', 'retention rate', 'collaboration score',
+                # Service level maintenance
+                'voc', 'check-in', 'boarding', 'service level'
+            ]
+
+            change_indicators = [
+                # Growth indicators
+                'growth', 'increase', 'expand', 'new', 'launch', 'innovation',
+                'transform', 'transformation', 'improvement', 'optimize', 'enhance',
+                # Value creation indicators
+                'reduce cost', 'cost reduction', 'efficiency gain', 'revenue growth',
+                'market share', 'new market', 'new product', 'new service',
+                # Strategic change indicators
+                'restructure', 'redesign', 're-engineer', 'digitize', 'automate',
+                'streamline', 'modernize', 'upgrade', 'implement new'
+            ]
+
+            # Count indicators
+            run_score = sum(1 for ind in run_indicators if ind in goal_text)
+            change_score = sum(1 for ind in change_indicators if ind in goal_text)
+
+            # Special case: Transformation goals written as tasks
+            is_transformation_as_task = (
+                'transformation' in goal_text or 'phase' in goal_text or 'rollout' in goal_text
+            ) and (
+                'completion' in goal_text or 'implement' in goal_text or 'deploy' in goal_text
+            ) and not any(value_ind in goal_text for value_ind in ['reduce cost', 'increase', 'improve by', 'save'])
+
+            # Determine Run vs Change classification
+            if change_score > run_score and not is_transformation_as_task:
+                goal_nature = "Change"
+                goal_nature_description = "Transforms the business: Creates new value or capability"
+            elif is_transformation_as_task:
+                goal_nature = "Change (Task-Framed)"
+                goal_nature_description = "Transformation goal written as deployment milestone rather than value realization"
+            else:
+                goal_nature = "Run"
+                goal_nature_description = "Runs the business: Maintains current operations and prevents failure"
+
             # Determine quadrant and assign points
             if is_aligned and is_outcome:
                 quadrant = "Strategic Driver"
@@ -980,6 +1031,13 @@ class MockAlignmentClient:
                     'isAligned': is_aligned,
                     'alignedThemes': aligned_themes,
                     'evidence': list(set(alignment_evidence))[:3]
+                },
+                'runChangeCheck': {
+                    'nature': goal_nature,
+                    'description': goal_nature_description,
+                    'runIndicators': run_score,
+                    'changeIndicators': change_score,
+                    'isTransformationAsTask': is_transformation_as_task
                 }
             }
 
@@ -1114,7 +1172,56 @@ class MockAlignmentClient:
             covered_themes.update(aligned)
 
         uncovered_themes = [t for t in theme_names if t not in covered_themes]
-        low_coverage_themes = []  # Could enhance with count-based analysis
+
+        # Run vs Change Analysis
+        run_count = 0
+        change_count = 0
+        change_as_task_count = 0
+        run_examples = []
+        change_examples = []
+
+        for goal in classified_goals:
+            run_change = goal.get('quadrantClassification', {}).get('runChangeCheck', {})
+            nature = run_change.get('nature', 'Run')
+
+            if nature == 'Run':
+                run_count += 1
+                if len(run_examples) < 3:
+                    run_examples.append(goal.get('goalText', '')[:80])
+            elif nature == 'Change':
+                change_count += 1
+                if len(change_examples) < 3:
+                    change_examples.append(goal.get('goalText', '')[:80])
+            elif nature == 'Change (Task-Framed)':
+                change_as_task_count += 1
+                change_count += 1  # Count as change for ratio, but flag it
+                if len(change_examples) < 3:
+                    change_examples.append(goal.get('goalText', '')[:80] + " [TASK-FRAMED]")
+
+        total_goals = run_count + change_count
+        run_percentage = round((run_count / total_goals) * 100, 1) if total_goals > 0 else 0
+        change_percentage = round((change_count / total_goals) * 100, 1) if total_goals > 0 else 0
+
+        # Determine strategic posture
+        if run_percentage >= 80:
+            strategic_posture = "Operationally Strong, Strategically Conservative"
+            posture_risk = "High risk if company strategy requires growth/innovation"
+        elif run_percentage >= 60:
+            strategic_posture = "Balanced Operator"
+            posture_risk = "Acceptable balance for mature operations"
+        else:
+            strategic_posture = "Change Agent"
+            posture_risk = "High transformation focus - ensure operational stability is maintained"
+
+        # Ideal ratio assessment
+        if 55 <= run_percentage <= 70:
+            ratio_assessment = "Healthy balance between Run and Change"
+        elif run_percentage > 80:
+            ratio_assessment = "Heavy bias toward maintenance (BAU) - consider adding growth/transformation goals"
+        elif run_percentage < 40:
+            ratio_assessment = "Heavy bias toward change - ensure operational foundations are not neglected"
+        else:
+            ratio_assessment = "Moderate imbalance - review goal mix against strategic priorities"
 
         return {
             'score': round(coherence_index, 1),
@@ -1128,6 +1235,20 @@ class MockAlignmentClient:
                 'coveredPillars': list(covered_themes),
                 'uncoveredPillars': uncovered_themes,
                 'coveragePercentage': round(len(covered_themes) / len(theme_names) * 100, 1) if theme_names else 0
+            },
+            'runChangeAnalysis': {
+                'runCount': run_count,
+                'changeCount': change_count,
+                'changeAsTaskCount': change_as_task_count,
+                'runPercentage': run_percentage,
+                'changePercentage': change_percentage,
+                'ratio': f"{int(run_percentage)}/{int(change_percentage)}",
+                'strategicPosture': strategic_posture,
+                'postureRisk': posture_risk,
+                'ratioAssessment': ratio_assessment,
+                'runExamples': run_examples,
+                'changeExamples': change_examples,
+                'idealRatio': "60/40 to 70/30 (Run/Change) for strategic leaders"
             }
         }
 
@@ -1197,11 +1318,62 @@ This score is calculated by assigning weighted points to each goal based on its 
         else:
             orphan_narrative += "All strategic pillars have at least one supporting goal. Monitor for adequate depth of coverage."
 
+        # Section 5: Run vs Change Analysis
+        run_change = coherence_analysis.get('runChangeAnalysis', {})
+        run_pct = run_change.get('runPercentage', 0)
+        change_pct = run_change.get('changePercentage', 0)
+        run_count = run_change.get('runCount', 0)
+        change_count = run_change.get('changeCount', 0)
+        change_as_task = run_change.get('changeAsTaskCount', 0)
+        strategic_posture = run_change.get('strategicPosture', 'Unknown')
+        posture_risk = run_change.get('postureRisk', '')
+        ratio_assessment = run_change.get('ratioAssessment', '')
+        ideal_ratio = run_change.get('idealRatio', '60/40 to 70/30')
+
+        run_change_narrative = f"""Run vs Change Analysis: {run_count} "Run" goals ({run_pct}%) vs {change_count} "Change" goals ({change_pct}%)
+
+Strategic Posture: {strategic_posture}
+
+A healthy strategic leader typically targets a {ideal_ratio} split between "Run the Business" (maintenance/BAU) and "Change the Business" (transformation/growth).
+
+Current Ratio: {int(run_pct)}/{int(change_pct)} (Run/Change)
+
+Assessment: {ratio_assessment}
+
+Risk Profile: {posture_risk}
+"""
+
+        # Add specific feedback based on posture
+        if run_pct >= 80:
+            run_change_narrative += """
+The "Run" Goals (Lagging Indicators):
+These goals describe a "Steady State" strategy focused on preventing failure rather than creating new value:
+- Financial targets ensure budget compliance but don't drive new revenue streams
+- Operational metrics (punctuality, safety, compliance) are about limiting downsides
+- People metrics (retention, engagement) maintain current workforce rather than build new capabilities
+
+The "Change" Gap:
+"""
+            if change_as_task > 0:
+                run_change_narrative += f"""Even the {change_as_task} transformation goal(s) identified are written as deployment milestones rather than value realization targets. Consider reframing from "Complete Phase 1 rollout" to "Reduce Cost Per Flight by X% via Phase 1."
+"""
+            else:
+                run_change_narrative += """There are no significant transformation or growth goals in this portfolio. If the company's strategy requires innovation or growth, this represents a significant execution risk.
+"""
+
+            run_change_narrative += """
+Recommendation: To shift from "Running" to "Building," consider:
+1. Converting one operational hygiene metric to a growth metric
+2. Reframing transformation goals from milestones to value outcomes
+3. Adding at least one goal focused on new capability, market, or revenue stream
+"""
+
         return {
             'coherenceScore': coherence_section,
             'alignmentNarrative': alignment_narrative,
             'rigorNarrative': rigor_narrative,
             'orphanCheck': orphan_narrative,
+            'runChangeNarrative': run_change_narrative,
             'fullNarrative': f"""STRATEGIC GOAL COHERENCE ASSESSMENT
 
 {coherence_section}
@@ -1222,7 +1394,13 @@ RIGOR ANALYSIS (The "How")
 
 STRATEGIC COVERAGE CHECK
 
-{orphan_narrative}"""
+{orphan_narrative}
+
+---
+
+RUN VS CHANGE ANALYSIS (The "Why")
+
+{run_change_narrative}"""
         }
 
     def _calculate_overall_scores(
