@@ -698,7 +698,7 @@ class MockAlignmentClient:
         classified_goals = self._classify_goals_matrix(goals, strategic_framework)
 
         # Calculate Coherence Index based on quadrant scoring
-        coherence_analysis = self._calculate_coherence_index(classified_goals, strategic_framework)
+        coherence_analysis = self._calculate_coherence_index(classified_goals, strategic_framework, seniority)
 
         # Generate narrative analysis
         narrative = self._generate_coherence_narrative(coherence_analysis, strategic_framework)
@@ -1106,12 +1106,18 @@ class MockAlignmentClient:
     def _calculate_coherence_index(
         self,
         classified_goals: List[Dict[str, Any]],
-        framework: Dict[str, Any]
+        framework: Dict[str, Any],
+        seniority: str = 'mid'
     ) -> Dict[str, Any]:
         """
         Calculate the Coherence Index based on quadrant scoring.
 
         Formula: (Sum of all Goal Points) / (Total Number of Goals)
+
+        Args:
+            classified_goals: Goals with quadrant classifications
+            framework: Strategic framework
+            seniority: Employee seniority level (affects Run/Change expectations)
         """
         if not classified_goals:
             return {
@@ -1202,26 +1208,95 @@ class MockAlignmentClient:
         run_percentage = round((run_count / total_goals) * 100, 1) if total_goals > 0 else 0
         change_percentage = round((change_count / total_goals) * 100, 1) if total_goals > 0 else 0
 
-        # Determine strategic posture
-        if run_percentage >= 80:
-            strategic_posture = "Operationally Strong, Strategically Conservative"
-            posture_risk = "High risk if company strategy requires growth/innovation"
-        elif run_percentage >= 60:
-            strategic_posture = "Balanced Operator"
-            posture_risk = "Acceptable balance for mature operations"
-        else:
-            strategic_posture = "Change Agent"
-            posture_risk = "High transformation focus - ensure operational stability is maintained"
+        # Seniority-specific Run/Change expectations
+        # Senior management should drive more change; individual contributors focus on execution
+        seniority_expectations = {
+            'executive': {
+                'ideal_run': 50, 'ideal_change': 50,
+                'max_run': 60, 'label': 'Executive/C-Suite',
+                'expectation': 'Executives should balance strategic transformation with operational oversight'
+            },
+            'senior': {
+                'ideal_run': 60, 'ideal_change': 40,
+                'max_run': 70, 'label': 'Senior Management/VP',
+                'expectation': 'Senior leaders should drive significant transformation while maintaining operations'
+            },
+            'mid': {
+                'ideal_run': 70, 'ideal_change': 30,
+                'max_run': 80, 'label': 'Middle Management',
+                'expectation': 'Managers balance team execution with improvement initiatives'
+            },
+            'junior': {
+                'ideal_run': 80, 'ideal_change': 20,
+                'max_run': 90, 'label': 'Individual Contributor',
+                'expectation': 'Focus on execution with some improvement initiatives is appropriate'
+            }
+        }
 
-        # Ideal ratio assessment
-        if 55 <= run_percentage <= 70:
-            ratio_assessment = "Healthy balance between Run and Change"
-        elif run_percentage > 80:
-            ratio_assessment = "Heavy bias toward maintenance (BAU) - consider adding growth/transformation goals"
-        elif run_percentage < 40:
-            ratio_assessment = "Heavy bias toward change - ensure operational foundations are not neglected"
+        # Get expectations for this seniority level
+        seniority_key = seniority.lower() if seniority else 'mid'
+        if seniority_key not in seniority_expectations:
+            # Map common seniority values - check executive first, then senior
+            seniority_lower = seniority_key.lower()
+            if any(s in seniority_lower for s in ['executive', 'c-suite', 'ceo', 'cfo', 'coo', 'chief', 'president']):
+                seniority_key = 'executive'
+            elif any(s in seniority_lower for s in ['senior management', 'vp', 'vice president', 'director', 'head', 'svp', 'evp', 'avp']):
+                seniority_key = 'senior'
+            elif any(s in seniority_lower for s in ['team lead', 'manager', 'supervisor', 'lead']):
+                seniority_key = 'mid'
+            elif any(s in seniority_lower for s in ['individual', 'contributor', 'analyst', 'associate', 'specialist']):
+                seniority_key = 'junior'
+            else:
+                seniority_key = 'mid'
+
+        expectations = seniority_expectations.get(seniority_key, seniority_expectations['mid'])
+        ideal_run = expectations['ideal_run']
+        ideal_change = expectations['ideal_change']
+        max_run = expectations['max_run']
+        role_label = expectations['label']
+        role_expectation = expectations['expectation']
+
+        # Determine strategic posture based on seniority-adjusted expectations
+        run_deviation = run_percentage - ideal_run
+
+        if run_percentage > max_run:
+            strategic_posture = "Operationally Strong, Strategically Conservative"
+            posture_risk = f"High risk for {role_label} role - insufficient focus on transformation/growth"
+            is_imbalanced = True
+        elif run_percentage >= ideal_run - 10 and run_percentage <= max_run:
+            strategic_posture = "Balanced for Role"
+            posture_risk = f"Acceptable balance for {role_label} responsibilities"
+            is_imbalanced = False
+        elif run_percentage < ideal_run - 20:
+            strategic_posture = "Change Agent"
+            posture_risk = f"High transformation focus for {role_label} - ensure operational stability"
+            is_imbalanced = True
         else:
-            ratio_assessment = "Moderate imbalance - review goal mix against strategic priorities"
+            strategic_posture = "Slightly Change-Heavy"
+            posture_risk = f"Moderate transformation focus - appropriate if organization is in transition"
+            is_imbalanced = False
+
+        # Generate role-appropriate assessment
+        if seniority_key in ['senior', 'executive'] and run_percentage > max_run:
+            ratio_assessment = (
+                f"CRITICAL for {role_label}: {int(run_percentage)}% Run goals significantly exceeds "
+                f"the {max_run}% maximum for strategic leaders. This portfolio is operationally focused "
+                f"when the role demands strategic transformation leadership."
+            )
+        elif run_percentage > max_run:
+            ratio_assessment = (
+                f"Heavy bias toward maintenance (BAU) for {role_label} level. "
+                f"Consider adding growth/transformation goals."
+            )
+        elif abs(run_percentage - ideal_run) <= 10:
+            ratio_assessment = f"Healthy balance between Run and Change for {role_label} role"
+        elif run_percentage < ideal_run - 20:
+            ratio_assessment = (
+                f"Heavy bias toward change - ensure operational foundations are maintained "
+                f"for {role_label} responsibilities"
+            )
+        else:
+            ratio_assessment = f"Moderate balance - review goal mix against {role_label} strategic priorities"
 
         return {
             'score': round(coherence_index, 1),
@@ -1248,7 +1323,12 @@ class MockAlignmentClient:
                 'ratioAssessment': ratio_assessment,
                 'runExamples': run_examples,
                 'changeExamples': change_examples,
-                'idealRatio': "60/40 to 70/30 (Run/Change) for strategic leaders"
+                'idealRatio': f"{ideal_run}/{ideal_change} (Run/Change) for {role_label}",
+                'seniorityLevel': seniority_key,
+                'roleLabel': role_label,
+                'roleExpectation': role_expectation,
+                'maxAcceptableRun': max_run,
+                'isImbalanced': is_imbalanced
             }
         }
 
@@ -1328,14 +1408,22 @@ This score is calculated by assigning weighted points to each goal based on its 
         strategic_posture = run_change.get('strategicPosture', 'Unknown')
         posture_risk = run_change.get('postureRisk', '')
         ratio_assessment = run_change.get('ratioAssessment', '')
-        ideal_ratio = run_change.get('idealRatio', '60/40 to 70/30')
+        ideal_ratio = run_change.get('idealRatio', '60/40')
+        role_label = run_change.get('roleLabel', 'this role')
+        role_expectation = run_change.get('roleExpectation', '')
+        max_run = run_change.get('maxAcceptableRun', 70)
+        is_imbalanced = run_change.get('isImbalanced', False)
+        seniority_level = run_change.get('seniorityLevel', 'mid')
 
         run_change_narrative = f"""Run vs Change Analysis: {run_count} "Run" goals ({run_pct}%) vs {change_count} "Change" goals ({change_pct}%)
 
+Role Context: {role_label}
+{role_expectation}
+
 Strategic Posture: {strategic_posture}
 
-A healthy strategic leader typically targets a {ideal_ratio} split between "Run the Business" (maintenance/BAU) and "Change the Business" (transformation/growth).
-
+Expected Ratio for {role_label}: {ideal_ratio} (Run/Change)
+Maximum Acceptable Run: {max_run}%
 Current Ratio: {int(run_pct)}/{int(change_pct)} (Run/Change)
 
 Assessment: {ratio_assessment}
@@ -1343,9 +1431,30 @@ Assessment: {ratio_assessment}
 Risk Profile: {posture_risk}
 """
 
-        # Add specific feedback based on posture
-        if run_pct >= 80:
-            run_change_narrative += """
+        # Add specific feedback based on posture and seniority
+        is_senior_leader = seniority_level in ['senior', 'executive']
+
+        if is_imbalanced and run_pct > max_run:
+            if is_senior_leader:
+                run_change_narrative += f"""
+⚠️ STRATEGIC LEADERSHIP GAP DETECTED
+
+As a {role_label}, your goal portfolio shows a significant imbalance toward operational maintenance.
+
+The "Run" Goals ({int(run_pct)}% of portfolio - Lagging Indicators):
+These goals describe a "Steady State" strategy focused on preventing failure rather than creating new value:
+- Financial targets (EBIT) ensure budget compliance but don't drive new revenue streams
+- Operational metrics (punctuality, safety, compliance) are about limiting downsides
+- People metrics (retention, engagement) maintain current workforce rather than build new capabilities
+
+Why This Matters for {role_label}:
+At your level, the organization expects strategic transformation leadership, not just operational stewardship.
+A portfolio with {int(run_pct)}% Run goals suggests you may be "locking down the fort" rather than "building the future."
+
+The "Change" Gap:
+"""
+            else:
+                run_change_narrative += """
 The "Run" Goals (Lagging Indicators):
 These goals describe a "Steady State" strategy focused on preventing failure rather than creating new value:
 - Financial targets ensure budget compliance but don't drive new revenue streams
@@ -1354,18 +1463,35 @@ These goals describe a "Steady State" strategy focused on preventing failure rat
 
 The "Change" Gap:
 """
+
             if change_as_task > 0:
-                run_change_narrative += f"""Even the {change_as_task} transformation goal(s) identified are written as deployment milestones rather than value realization targets. Consider reframing from "Complete Phase 1 rollout" to "Reduce Cost Per Flight by X% via Phase 1."
+                run_change_narrative += f"""The {change_as_task} transformation goal(s) identified are written as deployment milestones rather than value realization targets.
+
+Problem: Measuring "Completion of Phase 1" tells you if something was installed, not if it created value.
+Solution: Reframe to "Reduce Cost Per Flight by X% via Phase 1" or "Increase throughput by Y%."
 """
             else:
-                run_change_narrative += """There are no significant transformation or growth goals in this portfolio. If the company's strategy requires innovation or growth, this represents a significant execution risk.
+                run_change_narrative += """There are no significant transformation or growth goals in this portfolio.
+
+If the company's strategy is "Operational Excellence & Stability," this portfolio is appropriate.
+If the company's strategy is "Growth & Innovation," this represents a significant execution risk.
 """
 
-            run_change_narrative += """
-Recommendation: To shift from "Running" to "Building," consider:
-1. Converting one operational hygiene metric to a growth metric
-2. Reframing transformation goals from milestones to value outcomes
-3. Adding at least one goal focused on new capability, market, or revenue stream
+            if is_senior_leader:
+                run_change_narrative += f"""
+Recommendations for {role_label}:
+1. Replace one operational hygiene metric (e.g., Visa Infringements) with a growth metric
+2. Reframe transformation goals from deployment milestones to value realization targets
+3. Add at least one goal focused on new capability, market expansion, or revenue growth
+4. Consider: What NEW value will you create this year, not just what will you maintain?
+"""
+            else:
+                run_change_narrative += """
+Recommendation: Consider adding improvement-focused goals alongside operational responsibilities.
+"""
+        elif not is_imbalanced:
+            run_change_narrative += f"""
+✓ Your Run/Change balance is appropriate for your {role_label} level.
 """
 
         return {
