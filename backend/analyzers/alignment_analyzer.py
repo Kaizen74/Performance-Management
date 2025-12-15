@@ -848,6 +848,41 @@ class MockAlignmentClient:
             if is_people_goal and has_metrics:
                 is_outcome = True  # People metrics with targets are measurable outcomes
 
+            # Operations/Safety goals with specific targets are inherently outcome-oriented
+            # Goals measuring safety, quality, performance metrics are Internal Process outcomes
+            safety_indicators = ['injury', 'incident', 'breach', 'infringement', 'safety', 'security',
+                                'accident', 'violation', 'compliance', 'audit']
+            operations_indicators = ['delay', 'passing', 'punctuality', 'on-time', 'efficiency',
+                                    'throughput', 'capacity', 'utilization', 'productivity', 'quality',
+                                    'defect', 'error', 'rate', 'per 1m', 'per 10k', 'manhours', 'movements']
+            is_operations_goal = (
+                goal_text.startswith('[operations]') or
+                goal_text.startswith('[safety]') or
+                goal_text.startswith('[security]') or
+                goal_text.startswith('[quality]') or
+                goal_text.startswith('[process]') or
+                (any(indicator in goal_text for indicator in safety_indicators + operations_indicators) and
+                 any(indicator in goal_text for indicator in ['target', 'threshold', 'superior']) and
+                 has_metrics)
+            )
+
+            if is_operations_goal and has_metrics:
+                is_outcome = True  # Operations metrics with targets are measurable outcomes
+
+            # Customer goals with specific targets are inherently outcome-oriented
+            # Goals measuring VOC, satisfaction, service quality are Customer perspective outcomes
+            customer_indicators = ['voc', 'customer', 'satisfaction', 'nps', 'csat', 'check-in',
+                                  'boarding', 'service', 'complaint', 'feedback', 'rating', 'experience']
+            is_customer_goal = (
+                goal_text.startswith('[customer]') or
+                (any(indicator in goal_text for indicator in customer_indicators) and
+                 any(indicator in goal_text for indicator in ['target', 'threshold', 'superior', 'score']) and
+                 has_metrics)
+            )
+
+            if is_customer_goal and has_metrics:
+                is_outcome = True  # Customer metrics with targets are measurable outcomes
+
             # Check 2: Alignment (does it map to strategic pillars?)
             is_aligned = False
             aligned_themes = []
@@ -886,6 +921,26 @@ class MockAlignmentClient:
                 if 'People' not in aligned_themes and 'Learning' not in aligned_themes:
                     aligned_themes.append('People & Culture')
                     alignment_evidence.extend(['people metric', 'organizational capacity'])
+
+            # Special check: Operations/Safety goals with specific targets are inherently strategic
+            # They directly contribute to operational excellence through Internal Process perspective
+            if is_operations_goal and has_metrics:
+                # Operations/Safety goals with measurable targets (injury rates, incidents, quality metrics)
+                # are strategically aligned - they drive operational excellence and safety culture
+                is_aligned = True
+                if 'Operations' not in aligned_themes and 'Process' not in aligned_themes:
+                    aligned_themes.append('Operational Excellence')
+                    alignment_evidence.extend(['operations metric', 'process improvement'])
+
+            # Special check: Customer goals with specific targets are inherently strategic
+            # They directly contribute to customer satisfaction through Customer perspective
+            if is_customer_goal and has_metrics:
+                # Customer goals with measurable targets (VOC, satisfaction, service quality)
+                # are strategically aligned - they drive customer experience and satisfaction
+                is_aligned = True
+                if 'Customer' not in aligned_themes:
+                    aligned_themes.append('Customer Excellence')
+                    alignment_evidence.extend(['customer metric', 'service quality'])
 
             # For other commercial goals without financial targets, check for alignment
             is_commercial = any(ind in goal_text for ind in ['revenue', 'sales', 'quota', 'deal'])
@@ -1475,7 +1530,39 @@ STRATEGIC COVERAGE CHECK
              has_metrics)
         )
 
-        aligned_objectives = self._assign_mock_objectives(goal_num, is_financial=is_financial_goal, is_people=is_people_goal)
+        # Detect Operations/Safety goals for Internal Process perspective
+        safety_indicators = ['injury', 'incident', 'breach', 'infringement', 'safety', 'security',
+                            'accident', 'violation', 'compliance', 'audit']
+        operations_indicators = ['delay', 'passing', 'punctuality', 'on-time', 'efficiency',
+                                'throughput', 'capacity', 'utilization', 'productivity', 'quality',
+                                'defect', 'error', 'rate', 'per 1m', 'per 10k', 'manhours', 'movements']
+        is_operations_goal = (
+            text_lower.startswith('[operations]') or
+            text_lower.startswith('[safety]') or
+            text_lower.startswith('[security]') or
+            text_lower.startswith('[quality]') or
+            text_lower.startswith('[process]') or
+            (category and category.lower() in ['operations', 'safety', 'security', 'quality', 'process']) or
+            (any(indicator in text_lower for indicator in safety_indicators + operations_indicators) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior']) and
+             has_metrics)
+        )
+
+        # Detect Customer goals for Customer perspective
+        customer_indicators = ['voc', 'customer', 'satisfaction', 'nps', 'csat', 'check-in',
+                              'boarding', 'service', 'complaint', 'feedback', 'rating', 'experience']
+        is_customer_goal = (
+            text_lower.startswith('[customer]') or
+            (category and category.lower() in ['customer', 'customer satisfaction', 'service']) or
+            (any(indicator in text_lower for indicator in customer_indicators) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior', 'score']) and
+             has_metrics)
+        )
+
+        aligned_objectives = self._assign_mock_objectives(
+            goal_num, is_financial=is_financial_goal, is_people=is_people_goal,
+            is_operations=is_operations_goal, is_customer=is_customer_goal
+        )
 
         # Calculate alignment score using weighted formula based on strategy tie-back
         score_breakdown = self._calculate_goal_alignment_score(
@@ -1583,6 +1670,31 @@ STRATEGIC COVERAGE CHECK
              has_metrics)
         )
 
+        # Detect Operations/Safety goals for vision/mission scoring
+        safety_indicators_vm = ['injury', 'incident', 'breach', 'infringement', 'safety', 'security',
+                               'accident', 'violation', 'compliance', 'audit']
+        operations_indicators_vm = ['delay', 'passing', 'punctuality', 'on-time', 'efficiency',
+                                   'throughput', 'capacity', 'utilization', 'productivity', 'quality',
+                                   'defect', 'error', 'rate', 'per 1m', 'per 10k', 'manhours', 'movements']
+        is_operations_goal_vm = (
+            text_lower.startswith('[operations]') or
+            text_lower.startswith('[safety]') or
+            text_lower.startswith('[security]') or
+            (any(indicator in text_lower for indicator in safety_indicators_vm + operations_indicators_vm) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior']) and
+             has_metrics)
+        )
+
+        # Detect Customer goals for vision/mission scoring
+        customer_indicators_vm = ['voc', 'customer', 'satisfaction', 'nps', 'csat', 'check-in',
+                                 'boarding', 'service', 'complaint', 'feedback', 'rating', 'experience']
+        is_customer_goal_vm = (
+            text_lower.startswith('[customer]') or
+            (any(indicator in text_lower for indicator in customer_indicators_vm) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior', 'score']) and
+             has_metrics)
+        )
+
         # Financial goals with measurable targets inherently support organizational mission
         if is_financial_goal:
             vision_mission_score = 85
@@ -1596,6 +1708,20 @@ STRATEGIC COVERAGE CHECK
             vm_rationale = (
                 f"People goals with specific targets (retention/engagement/collaboration) directly contribute "
                 f"to organizational capacity and mission '{self.mission[:40]}...'"
+            )
+        # Operations/Safety goals with measurable targets support operational excellence
+        elif is_operations_goal_vm:
+            vision_mission_score = 85
+            vm_rationale = (
+                f"Operations/Safety goals with specific targets directly contribute to operational excellence "
+                f"and support the mission '{self.mission[:40]}...'"
+            )
+        # Customer goals with measurable targets support customer value creation
+        elif is_customer_goal_vm:
+            vision_mission_score = 85
+            vm_rationale = (
+                f"Customer goals with specific targets directly contribute to customer satisfaction "
+                f"and support the mission '{self.mission[:40]}...'"
             )
         elif vision_hits >= 2 or mission_hits >= 2:
             vision_mission_score = 85
@@ -1612,6 +1738,31 @@ STRATEGIC COVERAGE CHECK
         theme_score = 40  # Default: no theme match
         theme_rationale = "Does not directly address identified strategic themes"
 
+        # Detect Operations/Safety goals
+        safety_indicators = ['injury', 'incident', 'breach', 'infringement', 'safety', 'security',
+                            'accident', 'violation', 'compliance', 'audit']
+        operations_indicators = ['delay', 'passing', 'punctuality', 'on-time', 'efficiency',
+                                'throughput', 'capacity', 'utilization', 'productivity', 'quality',
+                                'defect', 'error', 'rate', 'per 1m', 'per 10k', 'manhours', 'movements']
+        is_operations_goal = (
+            text_lower.startswith('[operations]') or
+            text_lower.startswith('[safety]') or
+            text_lower.startswith('[security]') or
+            (any(indicator in text_lower for indicator in safety_indicators + operations_indicators) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior']) and
+             has_metrics)
+        )
+
+        # Detect Customer goals
+        customer_indicators = ['voc', 'customer', 'satisfaction', 'nps', 'csat', 'check-in',
+                              'boarding', 'service', 'complaint', 'feedback', 'rating', 'experience']
+        is_customer_goal = (
+            text_lower.startswith('[customer]') or
+            (any(indicator in text_lower for indicator in customer_indicators) and
+             any(indicator in text_lower for indicator in ['target', 'threshold', 'superior', 'score']) and
+             has_metrics)
+        )
+
         # Financial goals with specific targets are inherently aligned with financial themes
         if is_financial_goal:
             theme_score = 90
@@ -1625,6 +1776,20 @@ STRATEGIC COVERAGE CHECK
             theme_rationale = (
                 "People goal with measurable targets directly addresses the Learning & Growth perspective "
                 "of the strategic framework. Employee engagement, retention, and culture are core to organizational capacity."
+            )
+        # Operations/Safety goals with specific targets are inherently aligned with Internal Process themes
+        elif is_operations_goal:
+            theme_score = 90
+            theme_rationale = (
+                "Operations goal with measurable targets directly addresses the Internal Process perspective "
+                "of the strategic framework. Safety excellence and operational quality are core to organizational success."
+            )
+        # Customer goals with specific targets are inherently aligned with Customer themes
+        elif is_customer_goal:
+            theme_score = 90
+            theme_rationale = (
+                "Customer goal with measurable targets directly addresses the Customer perspective "
+                "of the strategic framework. Customer satisfaction and service quality drive organizational value."
             )
         else:
             for theme in self.theme_names:
@@ -2004,13 +2169,18 @@ STRATEGIC COVERAGE CHECK
 
         return base_recommendations[:5]  # Return top 5
 
-    def _assign_mock_objectives(self, goal_num: int, is_financial: bool = False, is_people: bool = False) -> List[str]:
+    def _assign_mock_objectives(
+        self, goal_num: int, is_financial: bool = False, is_people: bool = False,
+        is_operations: bool = False, is_customer: bool = False
+    ) -> List[str]:
         """Assign mock objective alignments.
 
         Args:
             goal_num: Goal number for cycling through objectives pool
             is_financial: If True, assign financial objectives (F1, F2)
             is_people: If True, assign learning & growth objectives (L1, L2)
+            is_operations: If True, assign internal process objectives (P1, P2)
+            is_customer: If True, assign customer objectives (C1, C2)
         """
         # Financial goals get financial perspective objectives
         if is_financial:
@@ -2019,6 +2189,14 @@ STRATEGIC COVERAGE CHECK
         # People/HR goals get learning & growth perspective objectives
         if is_people:
             return ["L1", "L2"]
+
+        # Operations/Safety goals get internal process perspective objectives
+        if is_operations:
+            return ["P1", "P2"]
+
+        # Customer goals get customer perspective objectives
+        if is_customer:
+            return ["C1", "C2"]
 
         objectives_pool = [
             ["P1", "P3"],
