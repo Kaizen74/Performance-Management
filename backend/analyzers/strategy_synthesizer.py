@@ -406,14 +406,17 @@ class MockClaudeClient:
                     if any(h in next_line.lower() for h in ['mission', 'purpose', 'values', 'strategy']):
                         if len(next_line) < 40:
                             break
+                    # Skip lines that look like page numbers or metadata
+                    if self._is_metadata_line(next_line):
+                        continue
                     # Add this line to vision
                     vision_parts.append(next_line.strip('"\''))
 
                 if vision_parts:
                     # Join lines - if they end with comma or no punctuation, use space
                     vision = ' '.join(vision_parts)
-                    # Clean up any double spaces
-                    vision = re.sub(r'\s+', ' ', vision).strip()
+                    # Clean up extracted text
+                    vision = self._clean_extracted_text(vision)
                     if len(vision) > 25:
                         return vision
 
@@ -429,8 +432,7 @@ class MockClaudeClient:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 vision = match.group(1).strip()
-                vision = re.sub(r'^[:\s\-"\']+', '', vision)
-                vision = re.sub(r'["\'\s]+$', '', vision)
+                vision = self._clean_extracted_text(vision)
                 if len(vision) > 25:
                     return vision
 
@@ -447,9 +449,62 @@ class MockClaudeClient:
                 line_lower = line_clean.lower()
                 for indicator in vision_indicators:
                     if indicator in line_lower:
-                        return line_clean.strip('"\'')
+                        cleaned = self._clean_extracted_text(line_clean)
+                        if len(cleaned) > 25:
+                            return cleaned
 
         return "Vision not explicitly stated in uploaded documents"
+
+    def _is_metadata_line(self, line: str) -> bool:
+        """Check if a line appears to be metadata (page numbers, security markers, etc.)."""
+        line_stripped = line.strip()
+
+        # Pure numbers (page numbers)
+        if line_stripped.isdigit():
+            return True
+
+        # Lines that are just security markers
+        security_patterns = ['<restricted>', '<confidential>', '<internal>', '<public>',
+                           'restricted', 'confidential', 'internal use', 'page ']
+        line_lower = line_stripped.lower()
+        if any(line_lower == pattern or line_lower.startswith(pattern) for pattern in security_patterns):
+            return True
+
+        # Lines that are very short and contain only numbers/special chars
+        if len(line_stripped) < 10 and not any(c.isalpha() for c in line_stripped):
+            return True
+
+        return False
+
+    def _clean_extracted_text(self, text: str) -> str:
+        """Clean extracted text by removing artifacts, page numbers, and security markers."""
+        import re
+
+        # Remove common document artifacts
+        # Security classification markers
+        text = re.sub(r'<\s*(Restricted|Confidential|Internal|Public)\s*>', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\(\s*(Restricted|Confidential|Internal|Public)\s*\)', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\[\s*(Restricted|Confidential|Internal|Public)\s*\]', '', text, flags=re.IGNORECASE)
+
+        # Trailing page numbers (e.g., "... text 32" or "... text | 32")
+        text = re.sub(r'\s*[\|/\\]\s*\d+\s*$', '', text)
+        text = re.sub(r'\s+\d{1,3}\s*$', '', text)  # Standalone numbers at end
+
+        # Page references
+        text = re.sub(r'\s*page\s+\d+\s*', ' ', text, flags=re.IGNORECASE)
+
+        # Clean up quotes and punctuation at boundaries
+        text = re.sub(r'^[:\s\-"\']+', '', text)
+        text = re.sub(r'["\'\s]+$', '', text)
+
+        # Clean up any double spaces
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        # Remove trailing fragments that look incomplete (ending with numbers or single words after period)
+        text = re.sub(r'\.\s+\d+\s*$', '.', text)
+        text = re.sub(r'\.\s+[A-Z][a-z]{0,3}\s*$', '.', text)  # Trailing partial words
+
+        return text.strip()
 
     def _extract_mission(self, text: str) -> str:
         """Extract mission/purpose statement from document text."""
@@ -485,14 +540,16 @@ class MockClaudeClient:
                     if any(h in next_line.lower() for h in ['vision', 'values', 'strategy', 'objective']):
                         if len(next_line) < 40:
                             break
+                    # Skip lines that look like page numbers or metadata
+                    if self._is_metadata_line(next_line):
+                        continue
                     # Add this line to mission
                     mission_parts.append(next_line.strip('"\''))
 
                 if mission_parts:
-                    # Join lines
+                    # Join lines and clean
                     mission = ' '.join(mission_parts)
-                    # Clean up any double spaces
-                    mission = re.sub(r'\s+', ' ', mission).strip()
+                    mission = self._clean_extracted_text(mission)
                     if len(mission) > 15:
                         return mission
 
@@ -511,8 +568,7 @@ class MockClaudeClient:
             if match:
                 start, end = match.span(1)
                 mission = text[start:end].strip()
-                mission = re.sub(r'^[:\s\-"\']+', '', mission)
-                mission = re.sub(r'["\'\s]+$', '', mission)
+                mission = self._clean_extracted_text(mission)
                 if len(mission) > 20:
                     return mission
 
@@ -528,7 +584,9 @@ class MockClaudeClient:
                 line_lower = line_clean.lower()
                 for indicator in mission_indicators:
                     if line_lower.startswith(indicator) or indicator in line_lower:
-                        return line_clean.strip('"\'')
+                        cleaned = self._clean_extracted_text(line_clean)
+                        if len(cleaned) > 15:
+                            return cleaned
 
         return "Mission/Purpose not explicitly stated in uploaded documents"
 
