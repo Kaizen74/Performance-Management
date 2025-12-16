@@ -56,14 +56,20 @@ export function StrategicFrameworkView() {
           <div>
             <h3 className="text-sm font-medium text-slate-700 mb-2">Core Values</h3>
             <div className="flex flex-wrap gap-2">
-              {framework.organizationalPurpose.values.map((value) => (
-                <span
-                  key={value}
-                  className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm"
-                >
-                  {value}
+              {framework.organizationalPurpose.values && framework.organizationalPurpose.values.length > 0 ? (
+                framework.organizationalPurpose.values.map((value) => (
+                  <span
+                    key={value}
+                    className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm"
+                  >
+                    {value}
+                  </span>
+                ))
+              ) : (
+                <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-sm">
+                  Values not explicitly stated in uploaded documents
                 </span>
-              ))}
+              )}
             </div>
           </div>
         </div>

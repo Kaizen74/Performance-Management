@@ -591,12 +591,25 @@ class MockClaudeClient:
         return "Mission/Purpose not explicitly stated in uploaded documents"
 
     def _extract_values(self, text: str) -> List[str]:
-        """Extract organizational values from document text."""
+        """Extract organizational values from document text, including from culture sections.
+
+        Looks for values in:
+        - Values/Core Values sections
+        - Culture/Our Culture sections
+        - DNA/Company DNA sections (e.g., "SATS DNA")
+        - [Company] Way sections (e.g., "The SATS Way")
+        - Behaviors/Mindset sections
+        - Principles/Beliefs sections
+        """
         import re
 
         values = []
         text_lower = text.lower()
         lines = text.split('\n')
+
+        # Try to detect company name from document for company-specific headers
+        # Look for common patterns like "SATS", company names in headers
+        company_name = self._detect_company_name(text)
 
         # SATS specific values - these are the exact 5 values to look for
         sats_values = ['safety', 'customer focus', 'respect', 'excellence', 'teamwork']
@@ -611,7 +624,10 @@ class MockClaudeClient:
             'inclusion', 'trust', 'agility', 'passion', 'empowerment',
             'commitment', 'responsibility', 'ethics',
             'professionalism', 'continuous improvement',
-            'people', 'growth', 'caring'
+            'people', 'growth', 'caring', 'leadership',
+            # Culture-related values
+            'ownership', 'openness', 'courage', 'learning', 'curiosity',
+            'humility', 'service', 'community', 'wellness', 'balance'
         ]
 
         # First, specifically look for "SATS People Values" or similar SATS-specific section
@@ -619,17 +635,20 @@ class MockClaudeClient:
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Look for SATS People Values header
+            # Look for SATS People Values header or similar
             if ('sats' in line_lower and 'value' in line_lower) or \
                ('people values' in line_lower) or \
+               ('people value' in line_lower) or \
                ('our values' in line_lower and 'sats' in text_lower[:text_lower.find(line_lower) + 100] if line_lower in text_lower else False):
 
                 # Look for the 5 SATS values in the next several lines
                 found_sats_values = []
-                for j in range(i, min(i + 20, len(lines))):
+                for j in range(i, min(i + 25, len(lines))):
                     check_line = lines[j].strip().lower()
+                    # Clean the line of bullet points and numbering
+                    check_line_clean = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', check_line).strip()
                     for sats_val in sats_values:
-                        if sats_val in check_line and sats_val.title() not in found_sats_values:
+                        if sats_val in check_line_clean and sats_val.title() not in found_sats_values:
                             found_sats_values.append(sats_val.title())
 
                 # If we found at least 3 of the 5 SATS values, use them
@@ -641,23 +660,68 @@ class MockClaudeClient:
                             ordered_values.append(sv.title())
                     return ordered_values if ordered_values else found_sats_values
 
-        # Look for explicit values section - "Our Values", "Core Values", "People Values", etc.
+        # Look for explicit values/culture section - expanded to include culture-related headers
         in_values_section = False
         values_section_start = -1
+
+        # Headers that indicate a values or culture section
+        values_headers = [
+            # Values-related headers
+            'values', 'core values', 'our values', 'people values', 'company values',
+            'organizational values', 'corporate values', 'guiding values',
+            # Culture-related headers
+            'culture', 'our culture', 'company culture', 'organizational culture',
+            'cultural values', 'cultural pillars', 'culture pillars',
+            # Beliefs and principles
+            'beliefs', 'our beliefs', 'core beliefs',
+            'principles', 'guiding principles', 'core principles',
+            # DNA-related headers (common in corporate culture statements)
+            'dna', 'our dna', 'company dna', 'corporate dna', 'organizational dna',
+            'cultural dna', 'leadership dna',
+            # "The [Company] Way" patterns
+            'way', 'our way', 'the way', 'company way',
+            'how we work', 'ways of working', 'how we operate',
+            # Behaviors and mindset
+            'behaviors', 'our behaviors', 'key behaviors', 'leadership behaviors',
+            'mindset', 'our mindset', 'winning mindset',
+            # Pillars (beyond culture pillars)
+            'pillars', 'our pillars', 'core pillars', 'strategic pillars'
+        ]
+
+        # Add company-specific headers if company name was detected
+        if company_name:
+            company_lower = company_name.lower()
+            company_specific_headers = [
+                f'{company_lower} dna',           # "SATS DNA"
+                f'{company_lower} culture',       # "SATS Culture"
+                f'{company_lower} values',        # "SATS Values"
+                f'{company_lower} way',           # "SATS Way"
+                f'the {company_lower} way',       # "The SATS Way"
+                f'{company_lower} people values', # "SATS People Values"
+                f'{company_lower} behaviors',     # "SATS Behaviors"
+                f'{company_lower} principles',    # "SATS Principles"
+            ]
+            values_headers.extend(company_specific_headers)
 
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Detect start of values section (header line)
-            is_values_header = (
-                ('values' in line_lower and len(line_clean) < 60 and 'value' != line_lower) or
-                'core values' in line_lower or
-                'our values' in line_lower or
-                'people values' in line_lower or
-                'company values' in line_lower or
-                'organizational values' in line_lower
-            )
+            # Skip metadata lines
+            if self._is_metadata_line(line_clean):
+                continue
+
+            # Detect start of values/culture section (header line)
+            is_values_header = False
+            for header in values_headers:
+                if header in line_lower and len(line_clean) < 80:
+                    # Make sure it's a header, not just a mention
+                    if (line_clean.endswith(':') or
+                        len(line_clean.split()) <= 5 or
+                        line_lower.strip(':').strip() == header or
+                        line_lower.startswith(header)):
+                        is_values_header = True
+                        break
 
             if is_values_header and not in_values_section:
                 in_values_section = True
@@ -674,6 +738,10 @@ class MockClaudeClient:
                         break
                     continue
 
+                # Skip metadata lines
+                if self._is_metadata_line(line_clean):
+                    continue
+
                 # Check for bullet points, circles, numbers, or plain text values
                 clean_line = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', line_clean).strip()
 
@@ -688,6 +756,9 @@ class MockClaudeClient:
                 if ' – ' in value_name:
                     value_name = value_name.split(' – ')[0].strip()
 
+                # Clean any remaining artifacts
+                value_name = self._clean_extracted_text(value_name)
+
                 # Check if this looks like a value name
                 if value_name and 2 < len(value_name) < 50:
                     value_lower = value_name.lower()
@@ -696,26 +767,30 @@ class MockClaudeClient:
                     is_known_value = any(val == value_lower or val in value_lower for val in common_values)
 
                     # Or check if it looks like a value name (capitalized, short phrase)
-                    is_capitalized = value_name[0].isupper()
+                    is_capitalized = value_name[0].isupper() if value_name else False
                     word_count = len(value_name.split())
                     is_short_phrase = word_count <= 4
 
                     # Accept if known value or looks like a value name
                     if is_known_value or (is_capitalized and is_short_phrase and word_count >= 1):
                         # Avoid duplicates and exclude things that look like headers or other content
+                        excluded_terms = [
+                            'values', 'culture', 'sats', 'our ', 'the ', 'and ',
+                            'leadership', 'service excellence', 'performance',
+                            'page', 'restricted', 'confidential'
+                        ]
                         if (value_name.lower() not in [v.lower() for v in values] and
-                            not value_name.lower().endswith('values') and
-                            not value_name.lower().startswith('sats') and
-                            not value_name.lower().startswith('our ') and
-                            value_name.lower() not in ['leadership', 'service excellence', 'performance']):  # Exclude common false positives
+                            not any(value_name.lower().endswith(term) for term in ['values', 'culture']) and
+                            not any(value_name.lower().startswith(term) for term in excluded_terms)):
                             values.append(value_name)
 
                 # Detect end of values section (new section header or too many lines)
-                if lines_since_start > 20:
+                if lines_since_start > 25:
                     break
                 # Check if this line looks like a new section header
                 if (line_clean.endswith(':') and len(line_clean) < 40 and
-                    'value' not in line_lower and lines_since_start > 2):
+                    not any(h in line_lower for h in ['value', 'culture', 'belief', 'principle']) and
+                    lines_since_start > 2):
                     break
 
         # If found values, return them
@@ -730,15 +805,30 @@ class MockClaudeClient:
         if len(found_sats) >= 3:
             return found_sats
 
-        # Final fallback: Look for value mentions in context
+        # Second fallback: Look for common values mentioned near value/culture keywords
         for value in common_values:
             if value in text_lower:
-                # Check if it's mentioned in a values context
+                # Check if it's mentioned in a values/culture context
                 value_patterns = [
                     rf'value[s]?[:\s].*\b{value}\b',
                     rf'\b{value}\b.*value',
                     rf'core.*\b{value}\b',
                     rf'we (?:value|believe in).*\b{value}\b',
+                    rf'culture.*\b{value}\b',
+                    rf'\b{value}\b.*culture',
+                    rf'people.*\b{value}\b',
+                    # DNA-related patterns
+                    rf'dna.*\b{value}\b',
+                    rf'\b{value}\b.*dna',
+                    rf'our dna.*\b{value}\b',
+                    # Way-related patterns
+                    rf'way.*\b{value}\b',
+                    rf'\b{value}\b.*way',
+                    rf'how we.*\b{value}\b',
+                    # Behaviors and mindset patterns
+                    rf'behavior.*\b{value}\b',
+                    rf'mindset.*\b{value}\b',
+                    rf'principle.*\b{value}\b',
                 ]
                 for pattern in value_patterns:
                     if re.search(pattern, text_lower):
@@ -746,10 +836,65 @@ class MockClaudeClient:
                             values.append(value.title())
                         break
 
+        # Third fallback: Look for numbered or bulleted lists near values/culture headers
         if not values:
-            return ["Values not explicitly stated in uploaded documents"]
+            for i, line in enumerate(lines):
+                line_lower = line.strip().lower()
+                # Extended list of culture-related keywords including DNA and Way
+                culture_keywords = ['value', 'culture', 'belief', 'principle', 'dna', 'way', 'behavior', 'mindset']
+                if any(h in line_lower for h in culture_keywords):
+                    # Scan next lines for bullet/numbered items
+                    for j in range(i + 1, min(i + 15, len(lines))):
+                        next_line = lines[j].strip()
+                        if re.match(r'^[\d\.\-•*○●►▪→]\s*\w', next_line):
+                            clean_val = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', next_line).strip()
+                            if ':' in clean_val:
+                                clean_val = clean_val.split(':')[0].strip()
+                            clean_val = self._clean_extracted_text(clean_val)
+                            if clean_val and 2 < len(clean_val) < 40 and clean_val[0].isupper():
+                                if clean_val not in values and clean_val.lower() not in ['values', 'culture']:
+                                    values.append(clean_val)
+
+        if not values:
+            return []  # Return empty list instead of message - let UI handle display
 
         return values[:10]  # Cap at 10 values
+
+    def _detect_company_name(self, text: str) -> Optional[str]:
+        """Detect company name from document text for use in pattern matching.
+
+        Looks for company names in common patterns like:
+        - "About [Company]"
+        - "[Company] Strategy"
+        - "[Company] DNA"
+        - "The [Company] Way"
+        """
+        import re
+
+        # Common patterns where company name appears
+        patterns = [
+            r'about\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?)',  # "About SATS"
+            r'([A-Z][A-Za-z]+)\s+(?:strategy|strategic)',       # "SATS Strategy"
+            r'([A-Z][A-Za-z]+)\s+(?:dna|culture|way|values)',   # "SATS DNA", "SATS Culture"
+            r'the\s+([A-Z][A-Za-z]+)\s+way',                     # "The SATS Way"
+            r'=+\s*DOCUMENT:\s*([A-Za-z]+)',                     # Document header pattern
+        ]
+
+        company_candidates = {}
+        for pattern in patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for match in matches:
+                name = match.strip().upper()
+                # Skip common words that aren't company names
+                skip_words = {'THE', 'OUR', 'AND', 'FOR', 'WITH', 'FROM', 'ABOUT',
+                             'STRATEGIC', 'STRATEGY', 'DOCUMENT', 'CORPORATE'}
+                if name not in skip_words and len(name) >= 2:
+                    company_candidates[name] = company_candidates.get(name, 0) + 1
+
+        # Return most frequently found name
+        if company_candidates:
+            return max(company_candidates, key=company_candidates.get)
+        return None
 
     def _extract_themes(self, text: str) -> List[Dict[str, Any]]:
         """Extract strategic themes from document text."""
