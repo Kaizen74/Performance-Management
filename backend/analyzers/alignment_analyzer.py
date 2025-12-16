@@ -1298,6 +1298,67 @@ class MockAlignmentClient:
         else:
             ratio_assessment = f"Moderate balance - review goal mix against {role_label} strategic priorities"
 
+        # Aggregate translation quality from goals
+        translation_scores = []
+        translation_issues = {
+            'copyPasteDetected': 0,
+            'passThruDetected': 0,
+            'sharedGoalTraps': 0,
+            'litmusTestFailed': 0
+        }
+        translation_examples = {
+            'poor': [],
+            'excellent': []
+        }
+
+        for goal in classified_goals:
+            tqa = goal.get('translationQualityAssessment', {})
+            if tqa:
+                overall_tq = tqa.get('overallTranslationQuality', {})
+                translation_scores.append(overall_tq.get('score', 50))
+
+                seniority_test = tqa.get('seniorityTestResult', {})
+                shared_goal = tqa.get('sharedGoalTrapCheck', {})
+
+                # Count issues
+                if seniority_test.get('translationQuality') == 'poor':
+                    translation_issues['copyPasteDetected'] += 1
+                    if len(translation_examples['poor']) < 2:
+                        translation_examples['poor'].append({
+                            'goalText': goal.get('goalText', '')[:80],
+                            'issue': seniority_test.get('testName', ''),
+                            'recommendation': seniority_test.get('recommendation', '')[:100]
+                        })
+
+                if not seniority_test.get('litmusTestPassed', True):
+                    translation_issues['litmusTestFailed'] += 1
+
+                if shared_goal.get('isSharedGoalTrap', False):
+                    translation_issues['sharedGoalTraps'] += 1
+
+                if seniority_test.get('passThruPatternsFound', 0) >= 2:
+                    translation_issues['passThruDetected'] += 1
+
+                # Track excellent translations
+                if seniority_test.get('translationQuality') == 'excellent':
+                    if len(translation_examples['excellent']) < 2:
+                        translation_examples['excellent'].append({
+                            'goalText': goal.get('goalText', '')[:80],
+                            'testName': seniority_test.get('testName', '')
+                        })
+
+        avg_translation_score = round(sum(translation_scores) / len(translation_scores), 1) if translation_scores else 50
+
+        # Determine translation quality verdict
+        if avg_translation_score >= 80:
+            translation_verdict = "Strong Strategy Translation"
+        elif avg_translation_score >= 60:
+            translation_verdict = "Adequate Translation with Room for Improvement"
+        elif avg_translation_score >= 40:
+            translation_verdict = "Weak Translation - Needs Refinement"
+        else:
+            translation_verdict = "Poor Translation - Strategy Copy-Paste Detected"
+
         return {
             'score': round(coherence_index, 1),
             'verdict': verdict,
@@ -1329,6 +1390,13 @@ class MockAlignmentClient:
                 'roleExpectation': role_expectation,
                 'maxAcceptableRun': max_run,
                 'isImbalanced': is_imbalanced
+            },
+            'translationQualityAnalysis': {
+                'averageScore': avg_translation_score,
+                'verdict': translation_verdict,
+                'issuesCounts': translation_issues,
+                'examples': translation_examples,
+                'testApplied': 'Strategic Contribution Test' if seniority_key in ['senior', 'executive'] else 'Operational Driver Test'
             }
         }
 
@@ -1494,12 +1562,100 @@ Recommendation: Consider adding improvement-focused goals alongside operational 
 ✓ Your Run/Change balance is appropriate for your {role_label} level.
 """
 
+        # Section 6: Translation Quality Analysis
+        translation_analysis = coherence_analysis.get('translationQualityAnalysis', {})
+        avg_translation = translation_analysis.get('averageScore', 50)
+        translation_verdict = translation_analysis.get('verdict', '')
+        translation_issues = translation_analysis.get('issuesCounts', {})
+        translation_examples = translation_analysis.get('examples', {})
+        test_applied = translation_analysis.get('testApplied', '')
+
+        translation_narrative = f"""Strategy Translation Quality: {avg_translation}%
+
+Verdict: {translation_verdict}
+Test Applied: {test_applied}
+
+"""
+        # Report on issues
+        copy_paste_count = translation_issues.get('copyPasteDetected', 0)
+        pass_thru_count = translation_issues.get('passThruDetected', 0)
+        shared_trap_count = translation_issues.get('sharedGoalTraps', 0)
+        litmus_failed = translation_issues.get('litmusTestFailed', 0)
+
+        if copy_paste_count > 0 or pass_thru_count > 0 or shared_trap_count > 0:
+            translation_narrative += "⚠️ TRANSLATION QUALITY ISSUES DETECTED:\n\n"
+
+            if copy_paste_count > 0:
+                translation_narrative += f"• Copy-Paste Detection: {copy_paste_count} goal(s) appear to copy BSC/strategy language without functional contextualization\n"
+
+            if pass_thru_count > 0:
+                translation_narrative += f"• Pass-Through Detection: {pass_thru_count} goal(s) just restate parent goals without identifying operational drivers\n"
+
+            if shared_trap_count > 0:
+                translation_narrative += f"• Shared Goal Trap: {shared_trap_count} goal(s) are too generic and need distinct departmental handshakes\n"
+
+            if litmus_failed > 0:
+                translation_narrative += f"• Litmus Test Failed: {litmus_failed} goal(s) fail the departmental identity or coachability test\n"
+
+            translation_narrative += "\n"
+
+            # Show examples of poor translation
+            poor_examples = translation_examples.get('poor', [])
+            if poor_examples:
+                translation_narrative += "Example Issues:\n"
+                for ex in poor_examples[:2]:
+                    translation_narrative += f"• \"{ex.get('goalText', '')}...\"\n"
+                    if ex.get('recommendation'):
+                        translation_narrative += f"  Recommendation: {ex.get('recommendation')}\n"
+                translation_narrative += "\n"
+        else:
+            translation_narrative += "✓ No major translation quality issues detected.\n\n"
+
+        # Show excellent examples if any
+        excellent_examples = translation_examples.get('excellent', [])
+        if excellent_examples:
+            translation_narrative += "Examples of Strong Translation:\n"
+            for ex in excellent_examples[:2]:
+                translation_narrative += f"• \"{ex.get('goalText', '')}...\" ({ex.get('testName', '')})\n"
+
+        # Provide role-specific guidance
+        if is_senior_leader:
+            translation_narrative += f"""
+SENIOR MANAGEMENT TRANSLATION GUIDANCE:
+
+The Departmental Identity Test:
+• Question: "How does MY specific function help achieve this strategic outcome?"
+• Litmus Test: If you removed your name, could someone tell which department you lead?
+
+Good Translation Examples:
+• Instead of "Achieve Company NPS of 50" (passive watching)
+• VP Product: "Reduce Feature Bug complaints by 30%" (product-specific driver)
+• VP HR: "Reduce Customer Support Turnover to <10%" (HR-specific driver)
+
+Each senior leader should translate the SAME strategy into their UNIQUE functional contribution.
+"""
+        else:
+            translation_narrative += f"""
+TEAM LEADER TRANSLATION GUIDANCE:
+
+The Coachability Test:
+• Question: "What will the team actually DO to achieve this?"
+• Litmus Test: Can you coach your team on this goal tomorrow morning?
+
+Good Translation Examples:
+• Instead of "Hit 20% Growth Target" (just passing down pressure)
+• Sales Manager: "Secure 3 Premium Tier demos per rep per week" (coachable activity)
+
+Link LEADING indicators (activities you can coach) to LAGGING indicators (outcomes).
+"""
+
         return {
             'coherenceScore': coherence_section,
             'alignmentNarrative': alignment_narrative,
             'rigorNarrative': rigor_narrative,
             'orphanCheck': orphan_narrative,
             'runChangeNarrative': run_change_narrative,
+            'translationQualityNarrative': translation_narrative,
             'fullNarrative': f"""STRATEGIC GOAL COHERENCE ASSESSMENT
 
 {coherence_section}
@@ -1526,7 +1682,13 @@ STRATEGIC COVERAGE CHECK
 
 RUN VS CHANGE ANALYSIS (The "Why")
 
-{run_change_narrative}"""
+{run_change_narrative}
+
+---
+
+STRATEGY TRANSLATION QUALITY (The "How Well")
+
+{translation_narrative}"""
         }
 
     def _calculate_overall_scores(
@@ -1900,6 +2062,11 @@ RUN VS CHANGE ANALYSIS (The "Why")
         # Generate SMART assessment
         smart = self._assess_smart(goal_text)
 
+        # Generate Translation Quality Assessment (seniority-specific)
+        translation_quality = self._assess_translation_quality(
+            goal_text, job_title, seniority, department
+        )
+
         return {
             "goalId": f"G{goal_num}",
             "goalText": goal_text,
@@ -1911,6 +2078,7 @@ RUN VS CHANGE ANALYSIS (The "Why")
             "alignmentRationale": alignment_rationale,
             "impactRationale": impact_rationale,
             "roleAppropriateness": role_appropriateness,
+            "translationQualityAssessment": translation_quality,
             "gaps": self._identify_gaps(goal_num, seniority),
             "smartAssessment": smart
         }
@@ -2544,6 +2712,511 @@ RUN VS CHANGE ANALYSIS (The "Why")
                 ("clear timelines, " if not has_timeframe else "") +
                 ("action-oriented language" if not has_action else "")
             ).rstrip(", ") or "Goal meets SMART criteria well"
+        }
+
+    def _assess_translation_quality(
+        self,
+        goal_text: str,
+        job_title: str,
+        seniority: str,
+        department: str
+    ) -> Dict[str, Any]:
+        """
+        Assess the quality of strategy-to-goal translation based on seniority level.
+
+        This implements three critical tests:
+        1. Strategic Contribution Test (Senior Management) - "The Departmental Identity Test"
+        2. Operational Driver Test (Middle Management) - "The Coachability Test"
+        3. Shared Goal Trap Detection - "The Handshake Test"
+
+        Returns:
+            Translation quality assessment with scores and recommendations
+        """
+        text_lower = goal_text.lower()
+
+        # Determine which test to apply based on seniority
+        seniority_lower = seniority.lower() if seniority else 'mid'
+
+        # Map seniority to test type
+        is_senior_management = any(s in seniority_lower for s in [
+            'senior management', 'executive', 'c-suite', 'ceo', 'cfo', 'coo', 'chief',
+            'president', 'vp', 'vice president', 'director', 'head', 'svp', 'evp', 'avp'
+        ])
+        is_team_leader = any(s in seniority_lower for s in [
+            'team leader', 'team lead', 'manager', 'supervisor', 'lead', 'mid'
+        ]) and not is_senior_management
+        is_individual_contributor = not is_senior_management and not is_team_leader
+
+        # Run appropriate test
+        if is_senior_management:
+            test_result = self._strategic_contribution_test(goal_text, job_title, department)
+        elif is_team_leader:
+            test_result = self._operational_driver_test(goal_text, job_title, department)
+        else:
+            # Individual contributors don't require strategy translation assessment
+            test_result = {
+                'testName': 'Execution Focus Test',
+                'testPassed': True,
+                'translationQuality': 'appropriate',
+                'score': 80,
+                'assessment': (
+                    f"As an individual contributor, this goal appropriately focuses on "
+                    f"execution and functional expertise rather than strategy translation."
+                ),
+                'recommendation': ''
+            }
+
+        # Also check for Shared Goal Trap
+        shared_goal_check = self._shared_goal_trap_test(goal_text, department)
+
+        return {
+            'seniorityTestResult': test_result,
+            'sharedGoalTrapCheck': shared_goal_check,
+            'overallTranslationQuality': self._calculate_translation_quality_score(
+                test_result, shared_goal_check
+            )
+        }
+
+    def _strategic_contribution_test(
+        self,
+        goal_text: str,
+        job_title: str,
+        department: str
+    ) -> Dict[str, Any]:
+        """
+        The Strategic Contribution Test for Senior Management.
+
+        Tests if senior leaders translate strategy into their functional language,
+        rather than copy-pasting BSC language.
+
+        Key Question: "How does MY specific function help the company achieve this BSC KPI?"
+
+        Litmus Test: If you removed the leader's name, could you still tell which
+        department they lead? If no, translation quality is Zero.
+        """
+        text_lower = goal_text.lower()
+
+        # Indicators of POOR translation (copy-paste from BSC)
+        generic_bsc_patterns = [
+            # Generic financial patterns without functional context
+            'achieve company', 'company-wide', 'organizational', 'enterprise',
+            'overall revenue', 'overall profitability', 'company nps', 'corporate',
+            # Passive watching patterns
+            'monitor ', 'track ', 'report on ', 'oversee the ',
+            # Generic improvement without specific drivers
+            'improve performance', 'enhance results', 'drive excellence',
+            'ensure success', 'support growth', 'enable transformation'
+        ]
+
+        # Indicators of GOOD translation (functional contextualization)
+        department_lower = department.lower() if department else ''
+
+        # Functional specificity patterns by common departments
+        functional_patterns = {
+            'product': ['feature', 'bug', 'release', 'roadmap', 'user experience', 'ux', 'sprint', 'backlog'],
+            'hr': ['turnover', 'retention', 'hiring', 'onboarding', 'talent', 'training', 'headcount', 'attrition'],
+            'sales': ['pipeline', 'quota', 'deal', 'lead', 'close rate', 'win rate', 'account', 'territory'],
+            'marketing': ['campaign', 'lead generation', 'brand', 'awareness', 'conversion', 'cpl', 'mql', 'sql'],
+            'finance': ['forecast', 'variance', 'budget', 'cash flow', 'working capital', 'cost per'],
+            'operations': ['throughput', 'cycle time', 'capacity', 'utilization', 'yield', 'oee', 'downtime'],
+            'engineering': ['uptime', 'latency', 'deployment', 'incident', 'tech debt', 'code quality'],
+            'customer': ['ticket', 'resolution', 'first call', 'escalation', 'csat', 'response time'],
+            'supply': ['inventory', 'lead time', 'supplier', 'procurement', 'logistics', 'stock']
+        }
+
+        # Count generic BSC patterns (negative indicator)
+        generic_count = sum(1 for pattern in generic_bsc_patterns if pattern in text_lower)
+
+        # Check for functional specificity (positive indicator)
+        functional_match = False
+        matched_function = None
+        functional_evidence = []
+
+        for function, patterns in functional_patterns.items():
+            matches = [p for p in patterns if p in text_lower]
+            if len(matches) >= 1:
+                functional_match = True
+                matched_function = function
+                functional_evidence = matches[:3]
+                break
+
+        # Also check if department keywords are in the goal
+        dept_keywords = department_lower.split() if department_lower else []
+        has_dept_context = any(kw in text_lower for kw in dept_keywords if len(kw) > 3)
+
+        # The Departmental Identity Test
+        # Can you identify the department from the goal text alone?
+        could_identify_department = functional_match or (has_dept_context and generic_count == 0)
+
+        # Calculate translation quality score (0-100)
+        if generic_count >= 2 and not functional_match:
+            # Copy-paste detected
+            score = 20
+            quality = 'poor'
+            test_passed = False
+            assessment = (
+                f"COPY-PASTE DETECTED: This goal uses generic BSC/strategy language without "
+                f"functional contextualization. Terms like '{generic_bsc_patterns[0]}' suggest "
+                f"the strategy was copied rather than translated into {department or 'functional'} terms. "
+                f"At the senior management level, goals should answer: 'How does MY function "
+                f"specifically contribute to this strategic outcome?'"
+            )
+            recommendation = (
+                f"REFRAME: Instead of watching company metrics, identify the root cause your "
+                f"function can address. Example: 'Achieve Company NPS of 50' → "
+                f"'{department or 'Function'}: Reduce [specific driver] by X%'"
+            )
+        elif functional_match and generic_count <= 1:
+            # Good translation with functional context
+            score = 90
+            quality = 'excellent'
+            test_passed = True
+            assessment = (
+                f"STRONG TRANSLATION: This goal shows clear functional contextualization. "
+                f"The use of {matched_function}-specific language ({', '.join(functional_evidence)}) "
+                f"demonstrates the leader understands how their function drives strategic outcomes. "
+                f"The goal passes the Departmental Identity Test - you can tell this is a "
+                f"{matched_function.title() if matched_function else department} goal."
+            )
+            recommendation = ""
+        elif functional_match and generic_count >= 2:
+            # Mixed - has function context but also generic language
+            score = 60
+            quality = 'moderate'
+            test_passed = True
+            assessment = (
+                f"PARTIAL TRANSLATION: The goal shows some functional specificity "
+                f"({', '.join(functional_evidence)}) but also contains generic strategic language. "
+                f"Consider removing broad corporate terms and focusing purely on what "
+                f"the {department or 'function'} uniquely contributes."
+            )
+            recommendation = (
+                f"Sharpen the functional focus by removing generic terms and emphasizing "
+                f"the specific drivers your function controls."
+            )
+        else:
+            # No functional match but also not overtly generic
+            score = 50
+            quality = 'unclear'
+            test_passed = False
+            assessment = (
+                f"AMBIGUOUS TRANSLATION: This goal lacks clear functional markers. "
+                f"While not obviously copy-pasted, it doesn't clearly show how "
+                f"{department or 'this function'} specifically drives the outcome. "
+                f"A reader couldn't identify which department this leader runs."
+            )
+            recommendation = (
+                f"Add specific metrics or drivers that are unique to {department or 'your function'}. "
+                f"What can ONLY your function do to achieve this?"
+            )
+
+        return {
+            'testName': 'Strategic Contribution Test',
+            'testQuestion': 'How does MY specific function help the company achieve this strategic outcome?',
+            'litmusTest': 'If you removed the leader\'s name, could you tell which department they lead?',
+            'litmusTestPassed': could_identify_department,
+            'testPassed': test_passed,
+            'translationQuality': quality,
+            'score': score,
+            'genericPatternsFound': generic_count,
+            'functionalContextFound': functional_match,
+            'identifiedFunction': matched_function,
+            'functionalEvidence': functional_evidence,
+            'assessment': assessment,
+            'recommendation': recommendation
+        }
+
+    def _operational_driver_test(
+        self,
+        goal_text: str,
+        job_title: str,
+        department: str
+    ) -> Dict[str, Any]:
+        """
+        The Operational Driver Test for Middle Management / Team Leaders.
+
+        Tests if team leaders link Leading Indicators (Activity) to Lagging Indicators (Outcome).
+
+        Key Question: Does the goal explain what the team will actually DO?
+
+        Litmus Test: Can the team leader effectively coach their team on this goal
+        tomorrow morning? "Hit the target" is not coaching; "Get 3 demos" is actionable.
+        """
+        text_lower = goal_text.lower()
+
+        # Indicators of POOR translation (just passing pressure down)
+        pass_through_patterns = [
+            # Just restating the parent goal
+            'hit', 'meet', 'achieve target', 'reach goal', 'deliver results',
+            'meet expectations', 'achieve kpi', 'deliver on', 'hit quota',
+            # Vague ownership language
+            'ensure team', 'make sure', 'responsible for', 'accountable for',
+            # Outcome without driver
+            'growth target', 'revenue target', 'sales target', 'hit numbers'
+        ]
+
+        # Indicators of GOOD translation (actionable drivers)
+        leading_indicator_patterns = [
+            # Specific activities that can be coached
+            'calls per', 'demos per', 'meetings per', 'visits per',
+            'reviews per', 'check-ins per', 'touchpoints per',
+            # Behavioral drivers
+            'daily standup', 'weekly review', 'pipeline review',
+            'coaching session', 'skill assessment', '1:1',
+            # Process adherence
+            'follow process', 'use methodology', 'apply framework',
+            'document in', 'update crm', 'log activities',
+            # Specific ratios that can be coached
+            'conversion rate', 'win rate', 'response time', 'first call',
+            'average handling', 'resolution rate', 'quality score'
+        ]
+
+        # Quantifiable activity patterns (can be coached)
+        activity_pattern = any(indicator in text_lower for indicator in [
+            ' per day', ' per week', ' per month', ' per rep', ' per person',
+            ' daily', ' weekly', ' each', ' minimum of'
+        ])
+
+        # Count patterns
+        pass_through_count = sum(1 for pattern in pass_through_patterns if pattern in text_lower)
+        leading_count = sum(1 for pattern in leading_indicator_patterns if pattern in text_lower)
+
+        # Check for specific numbers (coachable metrics)
+        import re
+        has_specific_activity_target = bool(re.search(r'\d+\s*(calls|demos|meetings|visits|reviews)', text_lower))
+
+        # The Coachability Test
+        # Can you walk into a team meeting and coach on this tomorrow?
+        is_coachable = (leading_count >= 1 or has_specific_activity_target or activity_pattern) and pass_through_count <= 1
+
+        # Calculate translation quality score
+        if pass_through_count >= 2 and leading_count == 0:
+            # Just passing pressure down
+            score = 25
+            quality = 'poor'
+            test_passed = False
+            assessment = (
+                f"PASS-THROUGH DETECTED: This goal just restates the parent goal without "
+                f"identifying the operational drivers. Phrases like 'hit target' or 'achieve results' "
+                f"don't give the team actionable direction. As a team leader, you need to translate "
+                f"WHAT outcome is needed into HOW your team will achieve it."
+            )
+            recommendation = (
+                f"REFRAME: Identify the leading indicator (activity) that drives the lagging indicator (outcome). "
+                f"Example: 'Hit 20% Growth Target' → 'Secure 3 Premium Tier demos per rep per week' "
+                f"(a behavioral driver you can coach tomorrow morning)"
+            )
+        elif is_coachable and pass_through_count <= 1:
+            # Good - has actionable drivers
+            score = 85
+            quality = 'excellent'
+            test_passed = True
+            leading_examples = [p for p in leading_indicator_patterns if p in text_lower][:2]
+            examples_text = "Terms like " + ", ".join(leading_examples) + " show" if leading_examples else "The goal shows"
+            assessment = (
+                f"STRONG OPERATIONAL DRIVER: This goal links activity to outcome with coachable "
+                f"metrics. {examples_text} "
+                f"specific behaviors the team can execute. A team leader could walk into "
+                f"a morning meeting and coach on this goal immediately."
+            )
+            recommendation = ""
+        elif leading_count >= 1 and pass_through_count >= 2:
+            # Mixed - has some drivers but also pass-through language
+            score = 55
+            quality = 'moderate'
+            test_passed = True
+            assessment = (
+                f"PARTIAL TRANSLATION: The goal contains some operational drivers but also "
+                f"includes pass-through language that doesn't add coaching value. "
+                f"Consider removing vague accountability language and focusing on "
+                f"the specific activities you'll track."
+            )
+            recommendation = (
+                f"Remove generic 'hit/achieve/deliver' language and emphasize the specific "
+                f"activities that will drive success."
+            )
+        else:
+            # Ambiguous - can't determine if coachable
+            score = 45
+            quality = 'unclear'
+            test_passed = False
+            assessment = (
+                f"UNCLEAR DRIVERS: This goal doesn't clearly specify the operational activities "
+                f"that will drive the outcome. A team leader would struggle to coach on this "
+                f"because it doesn't answer: 'What do we DO to achieve this?'"
+            )
+            recommendation = (
+                f"Add specific, quantifiable activities. Example: Instead of a result-only goal, "
+                f"specify 'X [activities] per [person/time period]' that you'll track and coach."
+            )
+
+        return {
+            'testName': 'Operational Driver Test',
+            'testQuestion': 'What will the team actually DO to achieve this?',
+            'litmusTest': 'Can the team leader coach on this goal tomorrow morning?',
+            'litmusTestPassed': is_coachable,
+            'testPassed': test_passed,
+            'translationQuality': quality,
+            'score': score,
+            'passThruPatternsFound': pass_through_count,
+            'leadingIndicatorsFound': leading_count,
+            'hasSpecificActivityTarget': has_specific_activity_target,
+            'assessment': assessment,
+            'recommendation': recommendation
+        }
+
+    def _shared_goal_trap_test(
+        self,
+        goal_text: str,
+        department: str
+    ) -> Dict[str, Any]:
+        """
+        The Shared Goal Trap Test.
+
+        Detects when goals are too generic and could apply to any department,
+        indicating a "shared goal" that hasn't been properly broken into
+        distinct departmental handshakes.
+
+        Problem: Assigning "Launch New Product" equally to Product, Marketing, and Sales
+        Solution: Break into distinct deliverables with clear handoffs
+        """
+        text_lower = goal_text.lower()
+
+        # Common shared goal patterns (goals that need to be broken into handshakes)
+        shared_goal_patterns = [
+            # Cross-functional projects
+            'launch new', 'implement new system', 'digital transformation',
+            'new product launch', 'go-live', 'rollout', 'migration',
+            'integration', 'platform implementation', 'erp implementation',
+            'process improvement', 'organizational change', 'restructuring',
+            # Generic success metrics
+            'project success', 'successful delivery', 'on-time completion',
+            'customer satisfaction', 'overall satisfaction', 'employee engagement'
+        ]
+
+        # Indicators that a goal HAS been properly broken into a handshake
+        handshake_indicators = [
+            # Clear deliverable ownership
+            'deliver', 'code complete', 'gold master', 'specification',
+            'design document', 'qualified leads', 'certified', 'trained',
+            # Specific departmental contribution
+            'by my team', 'from our function', 'our deliverable',
+            # Clear handoff language
+            'hand off', 'handover', 'ready for', 'enabling',
+            # Specific success criteria
+            'measured by', 'defined as', 'acceptance criteria'
+        ]
+
+        # Check for shared goal patterns
+        shared_match_count = sum(1 for pattern in shared_goal_patterns if pattern in text_lower)
+        handshake_count = sum(1 for indicator in handshake_indicators if indicator in text_lower)
+
+        # Check if goal is too generic (could apply to any department)
+        is_too_generic = shared_match_count >= 1 and handshake_count == 0
+
+        if is_too_generic:
+            # Potential shared goal trap
+            is_trap = True
+            risk_level = 'high' if shared_match_count >= 2 else 'moderate'
+            assessment = (
+                f"SHARED GOAL RISK: This goal describes a cross-functional initiative without "
+                f"specifying {department or 'this function'}'s unique contribution. "
+                f"When multiple leaders share identical goals, accountability becomes diffuse "
+                f"and execution fails. Each function should own a distinct 'handshake' deliverable."
+            )
+
+            # Generate example handshakes based on common patterns
+            if 'launch' in text_lower or 'product' in text_lower:
+                example = (
+                    "Break into distinct handshakes:\n"
+                    "• Product: 'Deliver Gold Master code by [date]'\n"
+                    "• Marketing: 'Generate [X] qualified leads by launch'\n"
+                    "• Sales: 'Certify 100% of staff on new product pitch by [date]'"
+                )
+            elif 'implementation' in text_lower or 'system' in text_lower:
+                example = (
+                    "Break into distinct handshakes:\n"
+                    "• IT: 'Complete system integration and UAT by [date]'\n"
+                    "• Operations: 'Train [X]% of users to proficiency by [date]'\n"
+                    "• Change Mgmt: 'Achieve [X]% adoption rate by [date]'"
+                )
+            else:
+                example = (
+                    "Break into distinct handshakes:\n"
+                    "• Define YOUR function's specific deliverable\n"
+                    "• Specify acceptance criteria for handoff\n"
+                    "• Make success measurable independently of other functions"
+                )
+
+            recommendation = f"REFRAME with distinct handshakes:\n{example}"
+        elif shared_match_count >= 1 and handshake_count >= 1:
+            # Has shared goal pattern but also has handshake indicators
+            is_trap = False
+            risk_level = 'low'
+            assessment = (
+                f"PROPER HANDSHAKE: This goal references a cross-functional initiative "
+                f"but includes language suggesting a specific deliverable or contribution. "
+                f"Verify that the success criteria are independently measurable for {department or 'your function'}."
+            )
+            recommendation = ""
+        else:
+            # Not a shared goal pattern
+            is_trap = False
+            risk_level = 'none'
+            assessment = "No shared goal trap indicators detected. Goal appears function-specific."
+            recommendation = ""
+
+        return {
+            'testName': 'Shared Goal Trap Test',
+            'isSharedGoalTrap': is_trap,
+            'riskLevel': risk_level,
+            'sharedPatternsFound': shared_match_count,
+            'handshakeIndicatorsFound': handshake_count,
+            'assessment': assessment,
+            'recommendation': recommendation
+        }
+
+    def _calculate_translation_quality_score(
+        self,
+        seniority_test: Dict[str, Any],
+        shared_goal_check: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate overall translation quality score from component tests."""
+        base_score = seniority_test.get('score', 50)
+
+        # Apply penalty for shared goal trap
+        if shared_goal_check.get('isSharedGoalTrap', False):
+            if shared_goal_check.get('riskLevel') == 'high':
+                base_score -= 20
+            else:
+                base_score -= 10
+
+        # Clamp score
+        final_score = max(0, min(100, base_score))
+
+        # Determine overall quality
+        if final_score >= 80:
+            quality = 'excellent'
+            summary = 'Goal demonstrates strong strategy translation appropriate for role level.'
+        elif final_score >= 60:
+            quality = 'good'
+            summary = 'Goal shows reasonable translation with room for improvement.'
+        elif final_score >= 40:
+            quality = 'moderate'
+            summary = 'Goal needs refinement to better translate strategy into actionable direction.'
+        else:
+            quality = 'poor'
+            summary = 'Goal requires significant revision - appears to be copy-pasted or lacks functional context.'
+
+        return {
+            'score': final_score,
+            'quality': quality,
+            'summary': summary,
+            'testsPassed': (
+                (1 if seniority_test.get('testPassed', False) else 0) +
+                (1 if not shared_goal_check.get('isSharedGoalTrap', False) else 0)
+            ),
+            'totalTests': 2
         }
 
     def test_connection(self) -> bool:

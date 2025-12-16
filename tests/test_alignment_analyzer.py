@@ -357,6 +357,145 @@ class TestMockAlignmentClient:
         print(f"Mock parsed {len(result['goals'])} goals")
 
 
+class TestTranslationQualityAssessment:
+    """Test the translation quality assessment for strategy translation."""
+
+    def test_strategic_contribution_test_poor(self):
+        """Test that copy-paste goals are detected for senior management."""
+        client = MockAlignmentClient()
+        client.vision = "To be the industry leader"
+        client.mission = "Delivering value"
+        client.theme_names = ["Operational Excellence", "Customer Focus"]
+
+        # Poor translation - generic BSC language without functional context
+        poor_goal = "Achieve company-wide revenue growth and ensure overall organizational success"
+
+        result = client._strategic_contribution_test(poor_goal, "VP Sales", "Sales")
+
+        assert result['testName'] == 'Strategic Contribution Test'
+        assert result['translationQuality'] == 'poor' or result['score'] < 50
+        assert result['genericPatternsFound'] >= 1
+        print(f"Copy-paste detection: {result['assessment'][:100]}...")
+
+    def test_strategic_contribution_test_excellent(self):
+        """Test that functionally contextualized goals pass for senior management."""
+        client = MockAlignmentClient()
+        client.vision = "To be the industry leader"
+        client.mission = "Delivering value"
+        client.theme_names = ["Operational Excellence", "Customer Focus"]
+
+        # Good translation - specific functional language
+        good_goal = "Increase pipeline conversion rate from 15% to 25% through improved deal qualification"
+
+        result = client._strategic_contribution_test(good_goal, "VP Sales", "Sales")
+
+        assert result['testName'] == 'Strategic Contribution Test'
+        assert result['translationQuality'] in ['excellent', 'moderate'] or result['score'] >= 60
+        print(f"Functional context detection: {result['assessment'][:100]}...")
+
+    def test_operational_driver_test_poor(self):
+        """Test that pass-through goals are detected for team leaders."""
+        client = MockAlignmentClient()
+
+        # Poor translation - just passing down pressure
+        poor_goal = "Hit 20% growth target and achieve sales quota for the team"
+
+        result = client._operational_driver_test(poor_goal, "Sales Manager", "Sales")
+
+        assert result['testName'] == 'Operational Driver Test'
+        assert result['passThruPatternsFound'] >= 1
+        print(f"Pass-through detection: {result['assessment'][:100]}...")
+
+    def test_operational_driver_test_excellent(self):
+        """Test that coachable goals pass for team leaders."""
+        client = MockAlignmentClient()
+
+        # Good translation - specific activities that can be coached
+        good_goal = "Secure 3 Premium Tier demos per rep per week with 40% conversion rate"
+
+        result = client._operational_driver_test(good_goal, "Sales Manager", "Sales")
+
+        assert result['testName'] == 'Operational Driver Test'
+        assert result['litmusTestPassed'] == True
+        assert result['translationQuality'] in ['excellent', 'good', 'moderate']
+        print(f"Coachable goal detection: {result['assessment'][:100]}...")
+
+    def test_shared_goal_trap_detected(self):
+        """Test that shared goals are flagged for handshake breakdown."""
+        client = MockAlignmentClient()
+
+        # Shared goal trap - too generic, applies to multiple departments
+        shared_goal = "Launch new product successfully and ensure project success"
+
+        result = client._shared_goal_trap_test(shared_goal, "Product")
+
+        assert result['testName'] == 'Shared Goal Trap Test'
+        assert result['isSharedGoalTrap'] == True
+        assert result['sharedPatternsFound'] >= 1
+        print(f"Shared goal trap: {result['assessment'][:100]}...")
+
+    def test_shared_goal_with_handshake(self):
+        """Test that shared goals with handshakes are accepted."""
+        client = MockAlignmentClient()
+
+        # Good handshake - specific deliverable for function
+        handshake_goal = "Deliver Gold Master code for new product by Q3 with all acceptance criteria met"
+
+        result = client._shared_goal_trap_test(handshake_goal, "Product")
+
+        assert result['testName'] == 'Shared Goal Trap Test'
+        assert result['isSharedGoalTrap'] == False
+        print(f"Handshake accepted: {result['assessment'][:100]}...")
+
+    def test_translation_quality_in_analysis(self):
+        """Test that translation quality is included in full analysis."""
+        client = MockAlignmentClient()
+        result = client.analyze_goal_alignment(
+            MOCK_FRAMEWORK,
+            "• Reduce customer churn by 15% through improved onboarding process",
+            employee_context={
+                'employeeName': 'Test User',
+                'jobTitle': 'VP Customer Success',
+                'seniorityLevel': 'senior management',
+                'department': 'Customer Success'
+            }
+        )
+
+        # Check that translation quality is in coherence index
+        assert 'coherenceIndex' in result
+        assert 'translationQualityAnalysis' in result['coherenceIndex']
+
+        translation_analysis = result['coherenceIndex']['translationQualityAnalysis']
+        assert 'averageScore' in translation_analysis
+        assert 'verdict' in translation_analysis
+
+        print(f"Translation quality in analysis: {translation_analysis['verdict']}")
+
+    def test_translation_quality_per_goal(self):
+        """Test that each goal has translation quality assessment."""
+        client = MockAlignmentClient()
+        result = client.analyze_goal_alignment(
+            MOCK_FRAMEWORK,
+            "• Increase pipeline conversion through better qualification",
+            employee_context={
+                'employeeName': 'Test User',
+                'jobTitle': 'Sales Manager',
+                'seniorityLevel': 'team leader',
+                'department': 'Sales'
+            }
+        )
+
+        assert len(result['goals']) >= 1
+        for goal in result['goals']:
+            assert 'translationQualityAssessment' in goal
+            tqa = goal['translationQualityAssessment']
+            assert 'seniorityTestResult' in tqa
+            assert 'sharedGoalTrapCheck' in tqa
+            assert 'overallTranslationQuality' in tqa
+
+        print(f"Per-goal translation quality included for {len(result['goals'])} goals")
+
+
 def run_manual_tests():
     """Run tests manually for debugging."""
     print("=" * 60)
