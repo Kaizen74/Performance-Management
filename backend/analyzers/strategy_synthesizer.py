@@ -774,14 +774,35 @@ class MockClaudeClient:
                     # Accept if known value or looks like a value name
                     if is_known_value or (is_capitalized and is_short_phrase and word_count >= 1):
                         # Avoid duplicates and exclude things that look like headers or other content
-                        excluded_terms = [
+                        # Extended list to exclude business segments, service names, and non-value terms
+                        excluded_start_terms = [
                             'values', 'culture', 'sats', 'our ', 'the ', 'and ',
-                            'leadership', 'service excellence', 'performance',
                             'page', 'restricted', 'confidential'
                         ]
-                        if (value_name.lower() not in [v.lower() for v in values] and
-                            not any(value_name.lower().endswith(term) for term in ['values', 'culture']) and
-                            not any(value_name.lower().startswith(term) for term in excluded_terms)):
+                        excluded_contain_terms = [
+                            # Business segments and services (not values)
+                            'services', 'service', 'gateway', 'solutions', 'operations',
+                            'business', 'division', 'segment', 'unit', 'department',
+                            'group', 'company', 'corporate', 'enterprise',
+                            # Functional areas (not values)
+                            'management', 'marketing', 'finance', 'logistics', 'cargo',
+                            'aviation', 'catering', 'food', 'travel', 'airline',
+                            # Other non-value terms
+                            'strategy', 'strategic', 'objective', 'goal', 'target',
+                            'initiative', 'project', 'program', 'plan',
+                            'performance', 'leadership', 'service excellence'
+                        ]
+                        excluded_end_terms = ['values', 'culture', 'services', 'solutions']
+
+                        value_lower = value_name.lower()
+                        is_excluded = (
+                            value_lower in [v.lower() for v in values] or  # Already in list
+                            any(value_lower.startswith(term) for term in excluded_start_terms) or
+                            any(value_lower.endswith(term) for term in excluded_end_terms) or
+                            any(term in value_lower for term in excluded_contain_terms)
+                        )
+
+                        if not is_excluded:
                             values.append(value_name)
 
                 # Detect end of values section (new section header or too many lines)
@@ -838,6 +859,13 @@ class MockClaudeClient:
 
         # Third fallback: Look for numbered or bulleted lists near values/culture headers
         if not values:
+            # Terms to exclude from values (business segments, services, etc.)
+            fallback_excluded_terms = [
+                'services', 'service', 'gateway', 'solutions', 'operations',
+                'business', 'division', 'segment', 'management', 'logistics',
+                'cargo', 'aviation', 'catering', 'food', 'travel', 'airline',
+                'strategy', 'strategic', 'objective', 'goal', 'values', 'culture'
+            ]
             for i, line in enumerate(lines):
                 line_lower = line.strip().lower()
                 # Extended list of culture-related keywords including DNA and Way
@@ -851,8 +879,11 @@ class MockClaudeClient:
                             if ':' in clean_val:
                                 clean_val = clean_val.split(':')[0].strip()
                             clean_val = self._clean_extracted_text(clean_val)
-                            if clean_val and 2 < len(clean_val) < 40 and clean_val[0].isupper():
-                                if clean_val not in values and clean_val.lower() not in ['values', 'culture']:
+                            clean_val_lower = clean_val.lower() if clean_val else ''
+                            # Check it's a valid value and not a business term
+                            if (clean_val and 2 < len(clean_val) < 40 and clean_val[0].isupper() and
+                                clean_val not in values and
+                                not any(term in clean_val_lower for term in fallback_excluded_terms)):
                                     values.append(clean_val)
 
         if not values:
