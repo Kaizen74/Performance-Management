@@ -612,7 +612,15 @@ class MockClaudeClient:
         company_name = self._detect_company_name(text)
 
         # SATS specific values - these are the exact 5 values to look for
+        # Include variations for flexible matching
         sats_values = ['safety', 'customer focus', 'respect', 'excellence', 'teamwork']
+        sats_value_variations = {
+            'safety': ['safety', 'safe'],
+            'customer focus': ['customer focus', 'customer-focus', 'customer focused', 'customer centric'],
+            'respect': ['respect', 'respectful'],
+            'excellence': ['excellence', 'excellent'],
+            'teamwork': ['teamwork', 'team work', 'collaboration', 'team spirit']
+        }
 
         # Common corporate values - expanded list
         common_values = [
@@ -630,6 +638,15 @@ class MockClaudeClient:
             'humility', 'service', 'community', 'wellness', 'balance'
         ]
 
+        def find_sats_value_in_text(text_to_check: str) -> Optional[str]:
+            """Check if text contains any SATS value and return the canonical name."""
+            text_lower = text_to_check.lower()
+            for canonical, variations in sats_value_variations.items():
+                for var in variations:
+                    if var in text_lower:
+                        return canonical
+            return None
+
         # First, specifically look for "SATS People Values" or similar SATS-specific section
         for i, line in enumerate(lines):
             line_clean = line.strip()
@@ -642,23 +659,25 @@ class MockClaudeClient:
                ('our values' in line_lower and 'sats' in text_lower[:text_lower.find(line_lower) + 100] if line_lower in text_lower else False):
 
                 # Look for the 5 SATS values in the next several lines
-                found_sats_values = []
-                for j in range(i, min(i + 25, len(lines))):
-                    check_line = lines[j].strip().lower()
+                found_sats_values = set()
+                for j in range(i, min(i + 30, len(lines))):
+                    check_line = lines[j].strip()
                     # Clean the line of bullet points and numbering
                     check_line_clean = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', check_line).strip()
-                    for sats_val in sats_values:
-                        if sats_val in check_line_clean and sats_val.title() not in found_sats_values:
-                            found_sats_values.append(sats_val.title())
 
-                # If we found at least 3 of the 5 SATS values, use them
-                if len(found_sats_values) >= 3:
+                    # Check for each SATS value using variations
+                    found_val = find_sats_value_in_text(check_line_clean)
+                    if found_val:
+                        found_sats_values.add(found_val)
+
+                # If we found at least 2 of the 5 SATS values, use them (lowered threshold)
+                if len(found_sats_values) >= 2:
                     # Return in the correct order
                     ordered_values = []
                     for sv in sats_values:
-                        if sv.title() in found_sats_values:
+                        if sv in found_sats_values:
                             ordered_values.append(sv.title())
-                    return ordered_values if ordered_values else found_sats_values
+                    return ordered_values
 
         # Look for explicit values/culture section - expanded to include culture-related headers
         in_values_section = False
@@ -745,6 +764,12 @@ class MockClaudeClient:
                 # Check for bullet points, circles, numbers, or plain text values
                 clean_line = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', line_clean).strip()
 
+                # FIRST: Check if this line contains a SATS value (using flexible matching)
+                sats_val_found = find_sats_value_in_text(clean_line)
+                if sats_val_found and sats_val_found.title() not in values:
+                    values.append(sats_val_found.title())
+                    continue  # Move to next line after finding a SATS value
+
                 # Remove explanatory text after value name (after colon, dash, etc.)
                 value_name = clean_line
                 if ':' in clean_line:
@@ -818,13 +843,18 @@ class MockClaudeClient:
         if values:
             return values[:10]
 
-        # Fallback: Look for SATS values anywhere in document
-        found_sats = []
-        for sats_val in sats_values:
-            if sats_val in text_lower:
-                found_sats.append(sats_val.title())
-        if len(found_sats) >= 3:
-            return found_sats
+        # Fallback: Look for SATS values anywhere in document using flexible matching
+        found_sats = set()
+        for canonical, variations in sats_value_variations.items():
+            for var in variations:
+                if var in text_lower:
+                    found_sats.add(canonical)
+                    break  # Found this value, move to next
+        # Return if we found at least 2 SATS values (lowered from 3)
+        if len(found_sats) >= 2:
+            # Return in the correct order
+            ordered_sats = [sv.title() for sv in sats_values if sv in found_sats]
+            return ordered_sats
 
         # Second fallback: Look for common values mentioned near value/culture keywords
         for value in common_values:
