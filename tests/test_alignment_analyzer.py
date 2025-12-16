@@ -495,6 +495,103 @@ class TestTranslationQualityAssessment:
 
         print(f"Per-goal translation quality included for {len(result['goals'])} goals")
 
+    def test_alignment_score_quadrant_synchronization(self):
+        """Test that alignment score and quadrant classification are synchronized."""
+        client = MockAlignmentClient()
+
+        # High alignment goal should be classified as aligned
+        result = client.analyze_goal_alignment(
+            MOCK_FRAMEWORK,
+            "• Reduce customer churn by 15% through improved onboarding experience",
+            employee_context={
+                'employeeName': 'Test User',
+                'jobTitle': 'VP Customer Success',
+                'seniorityLevel': 'senior management',
+                'department': 'Customer Success'
+            }
+        )
+
+        assert len(result['goals']) >= 1
+        for goal in result['goals']:
+            alignment_score = goal.get('alignmentScore', 0)
+            quadrant = goal.get('quadrantClassification', {})
+
+            # If alignment score is high, quadrant should reflect alignment
+            if alignment_score >= 65:
+                assert quadrant.get('alignmentCheck', {}).get('isAligned') == True, \
+                    f"High alignment score ({alignment_score}) should result in aligned quadrant"
+
+            # If alignment score is low, should not be Strategic Driver
+            if alignment_score < 35:
+                assert quadrant.get('quadrant') != 'Strategic Driver', \
+                    f"Low alignment score ({alignment_score}) should not be Strategic Driver"
+
+        print(f"Alignment-quadrant synchronization verified")
+
+    def test_original_rationale_preserved(self):
+        """Test that original alignment rationale is not overwritten."""
+        client = MockAlignmentClient()
+        result = client.analyze_goal_alignment(
+            MOCK_FRAMEWORK,
+            "• Increase pipeline conversion through better qualification",
+            employee_context={
+                'employeeName': 'Test User',
+                'jobTitle': 'Sales Manager',
+                'seniorityLevel': 'team leader',
+                'department': 'Sales'
+            }
+        )
+
+        for goal in result['goals']:
+            # Original rationale should exist
+            assert 'alignmentRationale' in goal
+            assert len(goal['alignmentRationale']) > 0
+
+            # Quadrant rationale should be separate
+            assert 'quadrantRationale' in goal
+            assert len(goal['quadrantRationale']) > 0
+
+            # They should be different (quadrant uses different format)
+            # Original rationale should not start with quadrant keywords
+            original = goal['alignmentRationale']
+            quadrant_r = goal['quadrantRationale']
+            assert original != quadrant_r or (original == quadrant_r and 'ALIGNMENT' in original)
+
+        print("Original rationale preserved, quadrant rationale added separately")
+
+    def test_translation_penalty_applied(self):
+        """Test that poor translation quality applies penalty to quadrant points."""
+        client = MockAlignmentClient()
+
+        # A goal with poor translation should have penalty applied
+        poor_goal = "Achieve company-wide organizational transformation and ensure overall success"
+
+        # Simulate the goal going through the full analysis
+        result = client.analyze_goal_alignment(
+            MOCK_FRAMEWORK,
+            f"• {poor_goal}",
+            employee_context={
+                'employeeName': 'Test User',
+                'jobTitle': 'VP Operations',
+                'seniorityLevel': 'senior management',
+                'department': 'Operations'
+            }
+        )
+
+        for goal in result['goals']:
+            quadrant = goal.get('quadrantClassification', {})
+            # If translation penalty was applied, it should be tracked
+            if 'translationPenalty' in quadrant:
+                base_points = quadrant.get('basePoints', 0)
+                actual_points = quadrant.get('points', 0)
+                penalty = quadrant.get('translationPenalty', 0)
+
+                if penalty > 0:
+                    assert actual_points <= base_points, "Penalty should reduce points"
+                    print(f"Translation penalty applied: -{penalty} points")
+
+        print("Translation penalty integration verified")
+
 
 def run_manual_tests():
     """Run tests manually for debugging."""

@@ -645,6 +645,53 @@ class MockAlignmentClient:
     """
     Mock client for testing alignment analysis without API calls.
     Generates role-contextualized rationales based on employee metadata and strategic framework.
+
+    ANALYSIS ARCHITECTURE:
+    ======================
+    The goal analysis follows a multi-stage pipeline:
+
+    1. GOAL PARSING (_parse_goals)
+       - Extracts goals from document text or structured data
+       - For each goal, calls _create_goal_analysis
+
+    2. GOAL ANALYSIS (_create_goal_analysis)
+       - Calculates alignmentScore (0-100) via _calculate_goal_alignment_score
+         - 40% Strategic Objective Mapping
+         - 30% Vision/Mission Connection
+         - 20% Strategic Theme Alignment
+         - 10% Role-Appropriate Translation
+       - Assesses translation quality via _assess_translation_quality
+         - Senior Management: Strategic Contribution Test (functional contextualization)
+         - Team Leaders: Operational Driver Test (coachability)
+         - All: Shared Goal Trap detection
+       - Applies translation quality adjustment to alignment score
+       - Generates alignment/impact rationales and SMART assessment
+
+    3. QUADRANT CLASSIFICATION (_classify_goals_matrix)
+       - Uses alignment score to inform is_aligned (synchronized with step 2)
+         - Score >= 65: Aligned
+         - Score < 35: Misaligned
+         - 35-65: Use keyword matching as tiebreaker
+       - Checks rigor (outcome vs output verbs, metrics)
+       - Assigns quadrant: Strategic Driver / Busy Work Trap / Rogue Project / Distraction
+       - Applies translation quality penalty to quadrant points
+       - Adds Run vs Change analysis
+       - Preserves original rationale, adds separate quadrantRationale
+
+    4. COHERENCE INDEX (_calculate_coherence_index)
+       - Aggregates quadrant points across goals
+       - Calculates pillar/theme coverage
+       - Aggregates translation quality issues
+       - Calculates Run/Change balance with seniority-specific expectations
+
+    5. NARRATIVE GENERATION (_generate_coherence_narrative)
+       - Generates human-readable analysis sections
+       - Includes alignment, rigor, coverage, Run/Change, and translation quality narratives
+
+    SCORING CONSISTENCY:
+    - Alignment score directly influences quadrant classification
+    - Translation quality affects both alignment score (via adjustment) and quadrant points (via penalty)
+    - All scores use 0-100 scale with consistent interpretation
     """
 
     def __init__(self, api_key: Optional[str] = None):
@@ -999,6 +1046,26 @@ class MockAlignmentClient:
                 goal_nature = "Run"
                 goal_nature_description = "Runs the business: Maintains current operations and prevents failure"
 
+            # SYNCHRONIZATION FIX: Use existing alignment score to inform quadrant classification
+            # This ensures consistency between the numeric score and quadrant
+            existing_alignment_score = goal.get('alignmentScore', 50)
+
+            # If alignment score is high (>= 65), treat as aligned regardless of keyword matching
+            # If alignment score is low (< 35), treat as misaligned
+            # Otherwise, use keyword matching as tiebreaker
+            if existing_alignment_score >= 65:
+                is_aligned = True
+                if not aligned_themes:
+                    aligned_themes = ['Score-based alignment']
+            elif existing_alignment_score < 35:
+                is_aligned = False
+            # else: keep is_aligned from keyword matching
+
+            # INTEGRATION: Factor in translation quality if available
+            translation_quality = goal.get('translationQualityAssessment', {})
+            translation_score = translation_quality.get('overallTranslationQuality', {}).get('score', 70)
+            has_translation_issues = translation_score < 50
+
             # Determine quadrant and assign points
             if is_aligned and is_outcome:
                 quadrant = "Strategic Driver"
@@ -1017,10 +1084,20 @@ class MockAlignmentClient:
                 quadrant_points = 0
                 quadrant_description = "Low value: Unrelated task that doesn't advance strategic goals"
 
+            # Apply translation quality penalty to quadrant points
+            # Poor translation reduces the quadrant value (leader not translating strategy properly)
+            translation_penalty = 0
+            if has_translation_issues and quadrant in ["Strategic Driver", "Busy Work Trap"]:
+                translation_penalty = int((50 - translation_score) * 0.3)  # Up to 15 point penalty
+                quadrant_points = max(0, quadrant_points - translation_penalty)
+                quadrant_description += f" (Translation quality penalty: -{translation_penalty})"
+
             # Add classification to goal
             goal['quadrantClassification'] = {
                 'quadrant': quadrant,
                 'points': quadrant_points,
+                'basePoints': quadrant_points + translation_penalty,  # Original points before penalty
+                'translationPenalty': translation_penalty,
                 'description': quadrant_description,
                 'rigorCheck': {
                     'isOutcome': is_outcome,
@@ -1030,7 +1107,8 @@ class MockAlignmentClient:
                 'alignmentCheck': {
                     'isAligned': is_aligned,
                     'alignedThemes': aligned_themes,
-                    'evidence': list(set(alignment_evidence))[:3]
+                    'evidence': list(set(alignment_evidence))[:3],
+                    'alignmentScoreUsed': existing_alignment_score  # Track that we used the score
                 },
                 'runChangeCheck': {
                     'nature': goal_nature,
@@ -1041,8 +1119,8 @@ class MockAlignmentClient:
                 }
             }
 
-            # Update alignment rationale to reflect actual classification
-            goal['alignmentRationale'] = self._generate_quadrant_rationale(
+            # PRESERVE original rationale, add quadrant rationale as separate field
+            goal['quadrantRationale'] = self._generate_quadrant_rationale(
                 goal_text=goal.get('goalText', ''),
                 quadrant=quadrant,
                 is_aligned=is_aligned,
@@ -1050,8 +1128,9 @@ class MockAlignmentClient:
                 aligned_themes=aligned_themes,
                 alignment_evidence=alignment_evidence,
                 linked_objectives=goal.get('linkedObjectives', []),
-                alignment_score=goal.get('alignmentScore', 50)
+                alignment_score=existing_alignment_score
             )
+            # Original alignmentRationale is preserved from _create_goal_analysis
 
             classified_goals.append(goal)
 
@@ -2066,6 +2145,25 @@ STRATEGY TRANSLATION QUALITY (The "How Well")
         translation_quality = self._assess_translation_quality(
             goal_text, job_title, seniority, department
         )
+
+        # INTEGRATION: Apply translation quality as alignment score adjustment
+        # Poor translation by senior leaders/team leaders should lower alignment
+        translation_score = translation_quality.get('overallTranslationQuality', {}).get('score', 70)
+        seniority_lower = seniority.lower() if seniority else 'mid'
+        is_leader = any(s in seniority_lower for s in [
+            'senior management', 'executive', 'team leader', 'manager', 'director', 'vp', 'head'
+        ])
+
+        translation_adjustment = 0
+        if is_leader and translation_score < 50:
+            # Leaders with poor translation get alignment penalty
+            translation_adjustment = int((50 - translation_score) * 0.2)  # Up to 10 point penalty
+            alignment_score = max(0, alignment_score - translation_adjustment)
+            score_breakdown['translationQualityAdjustment'] = -translation_adjustment
+            score_breakdown['adjustedTotalScore'] = alignment_score
+        else:
+            score_breakdown['translationQualityAdjustment'] = 0
+            score_breakdown['adjustedTotalScore'] = alignment_score
 
         return {
             "goalId": f"G{goal_num}",
