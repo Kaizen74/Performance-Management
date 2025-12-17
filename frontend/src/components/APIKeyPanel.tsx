@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAnalysis } from '../contexts/AnalysisContext';
 
 export function APIKeyPanel() {
-  const { apiKey, apiConnected, setApiKey, testApiConnection, setCurrentStep } = useAnalysis();
+  const { apiKey, setApiKey, setCurrentStep } = useAnalysis();
   const [inputKey, setInputKey] = useState(apiKey || '');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);

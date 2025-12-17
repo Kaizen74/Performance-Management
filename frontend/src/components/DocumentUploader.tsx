@@ -17,7 +17,6 @@ export function DocumentUploader({ category, maxFiles, title, description }: Doc
     removeDocument,
     setCurrentStep,
     setProcessing,
-    setError,
   } = useAnalysis();
 
   const [dragOver, setDragOver] = useState(false);

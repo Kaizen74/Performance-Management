@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAnalysis, GoalRecommendation, RecommendationSet } from '../contexts/AnalysisContext';
+import { useAnalysis, RecommendationSet } from '../contexts/AnalysisContext';
 
 export function RecommendationsPanel() {
   const {
@@ -169,7 +169,7 @@ export function RecommendationsPanel() {
         <h2 className="text-2xl font-bold mb-2">AI-Powered Recommendations</h2>
         <p className="opacity-90 mb-4">
           {recSet.recommendations.length} strategic goal improvements identified for{' '}
-          {currentAnalysis?.documentName || 'this employee'}
+          {currentAnalysis?.employeeContext?.employeeName || currentAnalysis?.fileName || 'this employee'}
         </p>
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white/10 rounded-lg p-4">

@@ -1,14 +1,73 @@
+import { useState } from 'react';
 import { useAnalysis } from '../contexts/AnalysisContext';
 import { CoverageRadar } from './charts/CoverageRadar';
 import { PortfolioRanking } from './charts/PortfolioRanking';
 
+// Seniority filter options
+type SeniorityFilter = 'all' | 'senior_management' | 'team_leader' | 'individual_contributor';
+
+const SENIORITY_LABELS: Record<SeniorityFilter, string> = {
+  all: 'All Employees',
+  senior_management: 'Senior Management',
+  team_leader: 'Team Leaders',
+  individual_contributor: 'Individual Contributors',
+};
+
+// Helper to categorize seniority level
+function categorizeSeniority(seniorityLevel?: string): SeniorityFilter {
+  if (!seniorityLevel) return 'individual_contributor';
+
+  const level = seniorityLevel.toLowerCase().trim();
+
+  // Senior Management patterns
+  const seniorPatterns = [
+    'executive', 'senior', 'director', 'vp', 'vice president',
+    'c-level', 'ceo', 'cfo', 'coo', 'cto', 'cio', 'chro',
+    'head', 'chief', 'president', 'svp', 'evp', 'managing director',
+    'general manager', 'gm', 'partner', 'principal'
+  ];
+  if (seniorPatterns.some(p => level.includes(p))) {
+    return 'senior_management';
+  }
+
+  // Team Leader patterns
+  const teamLeaderPatterns = [
+    'team leader', 'team lead', 'manager', 'supervisor',
+    'lead', 'coordinator', 'section head'
+  ];
+  if (teamLeaderPatterns.some(p => level.includes(p))) {
+    return 'team_leader';
+  }
+
+  // Default to Individual Contributor
+  return 'individual_contributor';
+}
+
+// Mock seniority levels for demo data
+const MOCK_SENIORITY_LEVELS = [
+  'Individual Contributor',
+  'Individual Contributor',
+  'Team Leader',
+  'Senior Manager',
+  'Individual Contributor',
+  'Team Leader',
+  'Director',
+  'Individual Contributor',
+];
+
 // Generate mock data for demonstration
 function generateMockAnalyses(goalDocs: any[]) {
-  return goalDocs.map((doc) => ({
+  return goalDocs.map((doc, index) => ({
     documentId: doc.documentId,
     fileName: doc.fileName,
     overallAlignmentScore: 50 + Math.floor(Math.random() * 40),
     overallImpactScore: 45 + Math.floor(Math.random() * 45),
+    employeeContext: {
+      employeeName: doc.fileName?.replace(/\.(xlsx|docx|pdf)$/i, '') || `Employee ${index + 1}`,
+      jobTitle: ['Software Engineer', 'Product Manager', 'Team Lead', 'Senior Director', 'Analyst'][index % 5],
+      department: ['Engineering', 'Product', 'Operations', 'Finance'][index % 4],
+      seniorityLevel: MOCK_SENIORITY_LEVELS[index % MOCK_SENIORITY_LEVELS.length],
+    },
     goals: [
       {
         goalId: 'G1',
@@ -68,10 +127,29 @@ export function AlignmentDashboard() {
     calculateTier,
   } = useAnalysis();
 
+  // Seniority filter state
+  const [seniorityFilter, setSeniorityFilter] = useState<SeniorityFilter>('all');
+
   // Use mock data if no real analyses (for demo)
-  const analyses = goalAnalyses.length > 0
+  const allAnalyses = goalAnalyses.length > 0
     ? goalAnalyses
     : generateMockAnalyses(goalDocuments);
+
+  // Apply seniority filter
+  const analyses = seniorityFilter === 'all'
+    ? allAnalyses
+    : allAnalyses.filter(a => {
+        const seniority = a.employeeContext?.seniorityLevel;
+        return categorizeSeniority(seniority) === seniorityFilter;
+      });
+
+  // Count employees by seniority for filter badges
+  const seniorityCounts = {
+    all: allAnalyses.length,
+    senior_management: allAnalyses.filter(a => categorizeSeniority(a.employeeContext?.seniorityLevel) === 'senior_management').length,
+    team_leader: allAnalyses.filter(a => categorizeSeniority(a.employeeContext?.seniorityLevel) === 'team_leader').length,
+    individual_contributor: allAnalyses.filter(a => categorizeSeniority(a.employeeContext?.seniorityLevel) === 'individual_contributor').length,
+  };
 
   // Calculate aggregate metrics
   const avgAlignment = analyses.length > 0
@@ -417,6 +495,52 @@ export function AlignmentDashboard() {
           </div>
         </div>
       )}
+
+      {/* Seniority Filter */}
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm font-medium text-slate-700">Filter by Seniority:</span>
+            <div className="flex items-center space-x-2">
+              {(Object.keys(SENIORITY_LABELS) as SeniorityFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setSeniorityFilter(filter)}
+                  className={`
+                    px-3 py-1.5 rounded-full text-sm font-medium transition-colors
+                    ${seniorityFilter === filter
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }
+                  `}
+                >
+                  {SENIORITY_LABELS[filter]}
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${
+                    seniorityFilter === filter
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-slate-200 text-slate-500'
+                  }`}>
+                    {seniorityCounts[filter]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {seniorityFilter !== 'all' && (
+            <button
+              onClick={() => setSeniorityFilter('all')}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
+        {seniorityFilter !== 'all' && analyses.length === 0 && (
+          <p className="mt-3 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded">
+            No employees found in "{SENIORITY_LABELS[seniorityFilter]}" category.
+          </p>
+        )}
+      </div>
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
