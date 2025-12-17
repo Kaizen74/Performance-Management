@@ -24,7 +24,11 @@ class ClaudeClient:
     Handles authentication, retries, and response parsing.
     """
 
-    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    # Model tiers for cost/speed optimization
+    SONNET_MODEL = "claude-sonnet-4-20250514"  # Best quality, higher cost
+    HAIKU_MODEL = "claude-3-5-haiku-20241022"   # Fast, cheap, good quality
+    DEFAULT_MODEL = SONNET_MODEL
+
     MAX_RETRIES = 3
     RETRY_DELAY = 2  # seconds
 
@@ -209,7 +213,8 @@ Return ONLY valid JSON matching this structure:
         self,
         strategic_framework: Dict[str, Any],
         goal_document_text: str,
-        employee_context: Optional[Dict[str, Any]] = None
+        employee_context: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Analyze alignment between goals and strategic framework.
@@ -218,6 +223,7 @@ Return ONLY valid JSON matching this structure:
             strategic_framework: Structured strategic framework from analyze_strategy
             goal_document_text: Text content of goal document
             employee_context: Optional employee metadata (job title, seniority, department, goals with weights)
+            model: Optional model override (defaults to SONNET for senior, HAIKU for others)
 
         Returns:
             Alignment analysis with scores and recommendations
@@ -345,7 +351,8 @@ Return JSON:
     "recommendations": []
 }}"""
 
-        response = self.complete(prompt, system_prompt=system_prompt, max_tokens=6144)
+        # Use specified model or default
+        response = self.complete(prompt, system_prompt=system_prompt, model=model, max_tokens=6144)
 
         # Parse JSON from response
         try:

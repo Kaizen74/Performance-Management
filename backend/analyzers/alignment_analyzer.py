@@ -77,6 +77,53 @@ class AlignmentAnalyzer:
         else:
             self.client = ClaudeClient()
 
+    # Seniority levels that qualify for premium (Sonnet) analysis
+    SENIOR_LEVELS = {
+        'executive', 'senior', 'director', 'vp', 'vice president',
+        'c-level', 'ceo', 'cfo', 'coo', 'cto', 'cio', 'chro',
+        'head', 'chief', 'president', 'svp', 'evp', 'managing director',
+        'general manager', 'gm', 'partner', 'principal'
+    }
+
+    def _is_senior_employee(self, employee_context: Optional[Dict[str, Any]]) -> bool:
+        """
+        Determine if employee qualifies for premium (Sonnet) analysis.
+
+        Args:
+            employee_context: Employee metadata with seniority/job title info
+
+        Returns:
+            True if senior management, False otherwise
+        """
+        if not employee_context:
+            return False
+
+        # Check seniority level field
+        seniority = (employee_context.get('seniorityLevel') or '').lower().strip()
+        if any(level in seniority for level in self.SENIOR_LEVELS):
+            return True
+
+        # Check job title for senior indicators
+        job_title = (employee_context.get('jobTitle') or '').lower().strip()
+        if any(level in job_title for level in self.SENIOR_LEVELS):
+            return True
+
+        return False
+
+    def _get_model_for_employee(self, employee_context: Optional[Dict[str, Any]]) -> str:
+        """
+        Select appropriate Claude model based on employee seniority.
+
+        Args:
+            employee_context: Employee metadata
+
+        Returns:
+            Model identifier string
+        """
+        if self._is_senior_employee(employee_context):
+            return ClaudeClient.SONNET_MODEL  # Premium analysis for senior staff
+        return ClaudeClient.HAIKU_MODEL  # Fast, efficient analysis for others
+
     def analyze(self, goal_document: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analyze a single goal document against the strategic framework.
@@ -96,11 +143,15 @@ class AlignmentAnalyzer:
         # Extract employee context if available (from goals table upload)
         employee_context = self._extract_employee_context(goal_document)
 
+        # Select model based on employee seniority (Sonnet for senior, Haiku for others)
+        model = self._get_model_for_employee(employee_context)
+
         # Use Claude to analyze alignment with employee context
         raw_analysis = self.client.analyze_goal_alignment(
             self.framework,
             document_text,
-            employee_context=employee_context
+            employee_context=employee_context,
+            model=model
         )
 
         # Validate and enhance analysis
@@ -110,13 +161,15 @@ class AlignmentAnalyzer:
         coverage = self._calculate_coverage(analysis)
         analysis['strategicCoverage'] = coverage
 
-        # Add metadata
+        # Add metadata including model used
         analysis['documentId'] = str(uuid.uuid4())
         analysis['fileName'] = file_name
         analysis['metadata'] = {
             'analysisTimestamp': datetime.utcnow().isoformat() + 'Z',
             'goalCount': len(analysis.get('goals', [])),
-            'frameworkId': self.framework.get('metadata', {}).get('frameworkId', 'unknown')
+            'frameworkId': self.framework.get('metadata', {}).get('frameworkId', 'unknown'),
+            'modelUsed': model,
+            'isSeniorAnalysis': self._is_senior_employee(employee_context)
         }
 
         # Preserve employee metadata in analysis
@@ -737,7 +790,8 @@ class MockAlignmentClient:
         self,
         strategic_framework: Dict[str, Any],
         goal_document_text: str,
-        employee_context: Optional[Dict[str, Any]] = None
+        employee_context: Optional[Dict[str, Any]] = None,
+        model: Optional[str] = None  # Accepted but ignored in mock
     ) -> Dict[str, Any]:
         """Return mock alignment analysis with strategy-tied scoring and role-contextualized rationales."""
         # Extract strategic content for explicit referencing
