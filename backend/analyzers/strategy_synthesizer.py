@@ -369,89 +369,67 @@ class MockClaudeClient:
         }
 
     def _extract_vision(self, text: str) -> str:
-        """Extract vision statement from document text."""
+        """Extract vision statement from document text.
+
+        STRICTLY header-based: Only extracts content directly below a 'Vision' header.
+        """
         import re
 
         lines = text.split('\n')
 
-        # Look for "Vision Statement" or "Vision" as a header followed by the actual vision
+        # Look for "Vision" as a clear header line
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Check if this line is a vision header (short line containing "vision")
-            is_vision_header = (
-                'vision' in line_lower and
-                'mission' not in line_lower and
-                len(line_clean) < 50 and
-                (line_clean.endswith(':') or
-                 'statement' in line_lower or
-                 line_clean.lower().strip(':').strip() in ['vision', 'our vision', 'vision statement', 'company vision'])
-            )
+            # Check if this line is a vision header
+            # Must be a short line that clearly indicates a vision section
+            is_vision_header = False
+            vision_header_patterns = [
+                'vision', 'our vision', 'vision statement', 'company vision',
+                'corporate vision', 'strategic vision'
+            ]
+
+            # Line must be short (header-like) and match a vision pattern
+            if len(line_clean) < 50:
+                line_stripped = line_lower.strip(':').strip()
+                if line_stripped in vision_header_patterns:
+                    is_vision_header = True
+                elif line_clean.endswith(':') and any(p in line_lower for p in ['vision']):
+                    # "Vision:" or "Our Vision:" style headers
+                    if 'mission' not in line_lower and 'value' not in line_lower:
+                        is_vision_header = True
 
             if is_vision_header:
-                # Collect multiple lines after header until we hit a delimiter or new section
+                # Collect content directly below the header
                 vision_parts = []
-                for j in range(i + 1, min(i + 10, len(lines))):
+                for j in range(i + 1, min(i + 8, len(lines))):
                     next_line = lines[j].strip()
+
                     # Skip empty lines at the beginning
                     if not next_line and not vision_parts:
                         continue
                     # Stop at empty line after we've collected content
                     if not next_line and vision_parts:
                         break
-                    # Stop at new section headers
-                    if next_line.lower().endswith(':') and len(next_line) < 40:
-                        break
-                    if any(h in next_line.lower() for h in ['mission', 'purpose', 'values', 'strategy']):
-                        if len(next_line) < 40:
+                    # Stop at new section headers (short lines ending with : or containing section keywords)
+                    if len(next_line) < 50:
+                        next_lower = next_line.lower()
+                        if next_line.endswith(':'):
                             break
-                    # Skip lines that look like page numbers or metadata
+                        if any(h in next_lower for h in ['mission', 'purpose', 'values', 'culture', 'strategy', 'objective']):
+                            break
+                    # Skip metadata lines
                     if self._is_metadata_line(next_line):
                         continue
                     # Add this line to vision
                     vision_parts.append(next_line.strip('"\''))
 
                 if vision_parts:
-                    # Join lines - if they end with comma or no punctuation, use space
                     vision = ' '.join(vision_parts)
-                    # Clean up extracted text
                     vision = self._clean_extracted_text(vision)
-                    if len(vision) > 25:
+                    if len(vision) > 20:
                         return vision
-
-        # Look for pattern "Vision:" followed by text on same line or next line
-        patterns = [
-            r'vision statement[:\s]*[\n\r]+\s*([^\n]{25,300})',
-            r'our vision[:\s]*[\n\r]+\s*([^\n]{25,300})',
-            r'vision[:\s]+["\'"]?([^"\'\n]{25,300})["\'"]?',
-            r'vision[:\s]*[\n\r]+\s*([^\n]{25,300})',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                vision = match.group(1).strip()
-                vision = self._clean_extracted_text(vision)
-                if len(vision) > 25:
-                    return vision
-
-        # Look for sentences that look like vision statements by content
-        vision_indicators = [
-            "world's leading", "leading provider", "to be the", "become the",
-            "recognized as", "premier", "best-in-class", "global leader",
-            "leading aviation", "service excellence"
-        ]
-
-        for line in lines:
-            line_clean = line.strip()
-            if len(line_clean) > 30 and len(line_clean) < 250:
-                line_lower = line_clean.lower()
-                for indicator in vision_indicators:
-                    if indicator in line_lower:
-                        cleaned = self._clean_extracted_text(line_clean)
-                        if len(cleaned) > 25:
-                            return cleaned
 
         return "Vision not explicitly stated in uploaded documents"
 
@@ -507,27 +485,43 @@ class MockClaudeClient:
         return text.strip()
 
     def _extract_mission(self, text: str) -> str:
-        """Extract mission/purpose statement from document text."""
+        """Extract mission/purpose statement from document text.
+
+        STRICTLY header-based: Only extracts content directly below a 'Mission' or 'Purpose' header.
+        """
         import re
 
         lines = text.split('\n')
 
-        # Look for "Purpose Statement" or "Mission Statement" as a header
+        # Look for "Mission" or "Purpose" as a clear header line
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
             # Check if this line is a mission/purpose header
-            is_purpose_header = (
-                ('mission' in line_lower or 'purpose' in line_lower) and
-                ('statement' in line_lower or len(line_clean) < 40)
-            )
+            is_mission_header = False
+            mission_header_patterns = [
+                'mission', 'our mission', 'mission statement', 'company mission',
+                'purpose', 'our purpose', 'purpose statement', 'company purpose',
+                'corporate mission', 'corporate purpose'
+            ]
 
-            if is_purpose_header:
-                # Collect multiple lines after header until we hit a delimiter or new section
+            # Line must be short (header-like) and match a mission/purpose pattern
+            if len(line_clean) < 50:
+                line_stripped = line_lower.strip(':').strip()
+                if line_stripped in mission_header_patterns:
+                    is_mission_header = True
+                elif line_clean.endswith(':') and any(p in line_lower for p in ['mission', 'purpose']):
+                    # "Mission:" or "Our Purpose:" style headers
+                    if 'vision' not in line_lower and 'value' not in line_lower:
+                        is_mission_header = True
+
+            if is_mission_header:
+                # Collect content directly below the header
                 mission_parts = []
-                for j in range(i + 1, min(i + 10, len(lines))):
+                for j in range(i + 1, min(i + 8, len(lines))):
                     next_line = lines[j].strip()
+
                     # Skip empty lines at the beginning
                     if not next_line and not mission_parts:
                         continue
@@ -535,404 +529,140 @@ class MockClaudeClient:
                     if not next_line and mission_parts:
                         break
                     # Stop at new section headers
-                    if next_line.lower().endswith(':') and len(next_line) < 40:
-                        break
-                    if any(h in next_line.lower() for h in ['vision', 'values', 'strategy', 'objective']):
-                        if len(next_line) < 40:
+                    if len(next_line) < 50:
+                        next_lower = next_line.lower()
+                        if next_line.endswith(':'):
                             break
-                    # Skip lines that look like page numbers or metadata
+                        if any(h in next_lower for h in ['vision', 'values', 'culture', 'strategy', 'objective']):
+                            break
+                    # Skip metadata lines
                     if self._is_metadata_line(next_line):
                         continue
                     # Add this line to mission
                     mission_parts.append(next_line.strip('"\''))
 
                 if mission_parts:
-                    # Join lines and clean
                     mission = ' '.join(mission_parts)
                     mission = self._clean_extracted_text(mission)
                     if len(mission) > 15:
                         return mission
 
-        # Look for explicit patterns
-        patterns = [
-            r'purpose statement[:\s]*[\n\r]+([^\n]{20,300})',
-            r'our purpose[:\s]*[\n\r]+([^\n]{20,300})',
-            r'mission statement[:\s]*[\n\r]+([^\n]{20,300})',
-            r'our mission[:\s]*[\n\r]+([^\n]{20,300})',
-            r'purpose[:\s]+["\'"]?([^"\'\n]{20,300})["\'"]?',
-            r'mission[:\s]+["\'"]?([^"\'\n]{20,300})["\'"]?',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, text.lower())
-            if match:
-                start, end = match.span(1)
-                mission = text[start:end].strip()
-                mission = self._clean_extracted_text(mission)
-                if len(mission) > 20:
-                    return mission
-
-        # Look for mission-like phrases
-        mission_indicators = [
-            "powering", "enabling", "delivering", "connecting",
-            "we exist to", "our purpose is", "we are committed to"
-        ]
-
-        for line in lines:
-            line_clean = line.strip()
-            if len(line_clean) > 20 and len(line_clean) < 200:
-                line_lower = line_clean.lower()
-                for indicator in mission_indicators:
-                    if line_lower.startswith(indicator) or indicator in line_lower:
-                        cleaned = self._clean_extracted_text(line_clean)
-                        if len(cleaned) > 15:
-                            return cleaned
-
         return "Mission/Purpose not explicitly stated in uploaded documents"
 
     def _extract_values(self, text: str) -> List[str]:
-        """Extract organizational values from document text, including from culture sections.
+        """Extract organizational values from document text.
 
-        Looks for values in:
-        - Values/Core Values sections
-        - Culture/Our Culture sections
-        - DNA/Company DNA sections (e.g., "SATS DNA")
-        - [Company] Way sections (e.g., "The SATS Way")
-        - Behaviors/Mindset sections
-        - Principles/Beliefs sections
+        STRICTLY header-based: Only extracts content directly below 'Values' or 'Culture' headers.
         """
         import re
 
         values = []
-        text_lower = text.lower()
         lines = text.split('\n')
 
-        # Try to detect company name from document for company-specific headers
-        # Look for common patterns like "SATS", company names in headers
-        company_name = self._detect_company_name(text)
-
-        # SATS specific values - these are the exact 5 values to look for
-        # Include variations for flexible matching
+        # Known SATS values for recognition
         sats_values = ['safety', 'customer focus', 'respect', 'excellence', 'teamwork']
-        sats_value_variations = {
-            'safety': ['safety', 'safe'],
-            'customer focus': ['customer focus', 'customer-focus', 'customer focused', 'customer centric'],
-            'respect': ['respect', 'respectful'],
-            'excellence': ['excellence', 'excellent'],
-            'teamwork': ['teamwork', 'team work', 'collaboration', 'team spirit']
-        }
 
-        # Common corporate values - expanded list
-        common_values = [
-            # SATS specific values
+        # Known corporate values for validation
+        known_values = [
             'safety', 'customer focus', 'respect', 'excellence', 'teamwork',
-            # General corporate values
             'integrity', 'innovation', 'collaboration', 'accountability',
             'transparency', 'sustainability', 'quality', 'diversity',
             'inclusion', 'trust', 'agility', 'passion', 'empowerment',
-            'commitment', 'responsibility', 'ethics',
-            'professionalism', 'continuous improvement',
-            'people', 'growth', 'caring', 'leadership',
-            # Culture-related values
-            'ownership', 'openness', 'courage', 'learning', 'curiosity',
-            'humility', 'service', 'community', 'wellness', 'balance'
+            'commitment', 'responsibility', 'ethics', 'professionalism',
+            'ownership', 'openness', 'courage', 'learning', 'curiosity'
         ]
 
-        def find_sats_value_in_text(text_to_check: str) -> Optional[str]:
-            """Check if text contains any SATS value and return the canonical name."""
-            text_lower = text_to_check.lower()
-            for canonical, variations in sats_value_variations.items():
-                for var in variations:
-                    if var in text_lower:
-                        return canonical
-            return None
-
-        # First, specifically look for "SATS People Values" or similar SATS-specific section
-        for i, line in enumerate(lines):
-            line_clean = line.strip()
-            line_lower = line_clean.lower()
-
-            # Look for SATS People Values header or similar
-            if ('sats' in line_lower and 'value' in line_lower) or \
-               ('people values' in line_lower) or \
-               ('people value' in line_lower) or \
-               ('our values' in line_lower and 'sats' in text_lower[:text_lower.find(line_lower) + 100] if line_lower in text_lower else False):
-
-                # Look for the 5 SATS values in the next several lines
-                found_sats_values = set()
-                for j in range(i, min(i + 30, len(lines))):
-                    check_line = lines[j].strip()
-                    # Clean the line of bullet points and numbering
-                    check_line_clean = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', check_line).strip()
-
-                    # Check for each SATS value using variations
-                    found_val = find_sats_value_in_text(check_line_clean)
-                    if found_val:
-                        found_sats_values.add(found_val)
-
-                # If we found at least 2 of the 5 SATS values, use them (lowered threshold)
-                if len(found_sats_values) >= 2:
-                    # Return in the correct order
-                    ordered_values = []
-                    for sv in sats_values:
-                        if sv in found_sats_values:
-                            ordered_values.append(sv.title())
-                    return ordered_values
-
-        # Look for explicit values/culture section - expanded to include culture-related headers
-        in_values_section = False
-        values_section_start = -1
+        # Terms to exclude (business segments, regions, etc.)
+        excluded_terms = [
+            'services', 'service', 'gateway', 'solutions', 'operations',
+            'business', 'division', 'segment', 'management', 'logistics',
+            'cargo', 'aviation', 'catering', 'food', 'travel', 'airline',
+            'emeaa', 'emea', 'apac', 'americas', 'asia', 'europe', 'pacific',
+            'region', 'global', 'international', 'centralized', 'examination',
+            'strategy', 'strategic', 'objective', 'goal', 'target',
+            'e-commerce', 'ecommerce', 'digital', 'technology', 'platform',
+            'offerings', 'provider', 'best-in-class', 'countries', 'territories'
+        ]
 
         # Headers that indicate a values or culture section
-        # Be conservative - only match clear values/culture headers to avoid false positives
-        values_headers = [
-            # Values-related headers (most reliable)
-            'core values', 'our values', 'people values', 'company values',
-            'organizational values', 'corporate values', 'guiding values',
-            # Culture-related headers
-            'our culture', 'company culture', 'organizational culture',
-            'cultural values', 'cultural pillars', 'culture pillars',
-            # Beliefs and principles
-            'our beliefs', 'core beliefs',
-            'guiding principles', 'core principles',
-            # DNA-related headers (only specific forms)
-            'our dna', 'company dna', 'corporate dna', 'organizational dna',
-            'cultural dna',
-            # "The [Company] Way" patterns (only specific forms)
-            'our way', 'how we work', 'ways of working',
-            # Behaviors and mindset (only specific forms)
-            'our behaviors', 'key behaviors',
-            'our mindset', 'winning mindset'
+        values_header_patterns = [
+            'values', 'our values', 'core values', 'people values', 'company values',
+            'culture', 'our culture', 'company culture',
+            'sats values', 'sats people values'
         ]
-        # NOTE: Removed single-word headers like 'values', 'culture', 'dna', 'way', 'pillars'
-        # as they cause too many false positives
 
-        # Add company-specific headers if company name was detected
-        if company_name:
-            company_lower = company_name.lower()
-            company_specific_headers = [
-                f'{company_lower} dna',           # "SATS DNA"
-                f'{company_lower} culture',       # "SATS Culture"
-                f'{company_lower} values',        # "SATS Values"
-                f'{company_lower} way',           # "SATS Way"
-                f'the {company_lower} way',       # "The SATS Way"
-                f'{company_lower} people values', # "SATS People Values"
-                f'{company_lower} behaviors',     # "SATS Behaviors"
-                f'{company_lower} principles',    # "SATS Principles"
-            ]
-            values_headers.extend(company_specific_headers)
-
+        # Look for values/culture headers and extract content below
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Skip metadata lines
-            if self._is_metadata_line(line_clean):
-                continue
-
-            # Detect start of values/culture section (header line)
+            # Check if this line is a values/culture header
             is_values_header = False
-            for header in values_headers:
-                if header in line_lower and len(line_clean) < 80:
-                    # Make sure it's a header, not just a mention
-                    if (line_clean.endswith(':') or
-                        len(line_clean.split()) <= 5 or
-                        line_lower.strip(':').strip() == header or
-                        line_lower.startswith(header)):
+            if len(line_clean) < 50:  # Headers are typically short
+                line_stripped = line_lower.strip(':').strip()
+                if line_stripped in values_header_patterns:
+                    is_values_header = True
+                elif line_clean.endswith(':') and any(p in line_lower for p in ['value', 'culture']):
+                    # "Values:" or "Our Culture:" style headers
+                    if 'vision' not in line_lower and 'mission' not in line_lower:
                         is_values_header = True
+
+            if is_values_header:
+                # Extract values from lines directly below the header
+                found_values = []
+                for j in range(i + 1, min(i + 20, len(lines))):
+                    next_line = lines[j].strip()
+
+                    # Skip empty lines at beginning
+                    if not next_line and not found_values:
+                        continue
+                    # Stop at empty line after content
+                    if not next_line and found_values:
                         break
+                    # Stop at new section headers
+                    if len(next_line) < 50:
+                        next_lower = next_line.lower()
+                        if next_line.endswith(':'):
+                            break
+                        if any(h in next_lower for h in ['vision', 'mission', 'strategy', 'objective', 'goal']):
+                            break
+                    # Skip metadata
+                    if self._is_metadata_line(next_line):
+                        continue
 
-            if is_values_header and not in_values_section:
-                in_values_section = True
-                values_section_start = i
-                continue
+                    # Clean bullet points and numbering
+                    clean_line = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', next_line).strip()
 
-            if in_values_section:
-                lines_since_start = i - values_section_start
+                    # Extract value name (before colon or dash)
+                    value_name = clean_line
+                    if ':' in clean_line:
+                        value_name = clean_line.split(':')[0].strip()
+                    if ' - ' in value_name:
+                        value_name = value_name.split(' - ')[0].strip()
+                    if '–' in value_name:
+                        value_name = value_name.split('–')[0].strip()
 
-                # Skip empty lines
-                if not line_clean:
-                    # Exit if we've found values and hit a blank line after several lines
-                    if values and lines_since_start > 3:
-                        break
-                    continue
+                    value_name = self._clean_extracted_text(value_name)
+                    value_lower = value_name.lower() if value_name else ''
 
-                # Skip metadata lines
-                if self._is_metadata_line(line_clean):
-                    continue
+                    # Validate: must be short, capitalized, and not excluded
+                    if (value_name and
+                        3 < len(value_name) < 40 and
+                        len(value_name.split()) <= 4 and
+                        value_name[0].isupper() and
+                        value_name not in found_values and
+                        not any(term in value_lower for term in excluded_terms)):
 
-                # Check for bullet points, circles, numbers, or plain text values
-                clean_line = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', line_clean).strip()
+                        # Prefer known values
+                        is_known = any(kv in value_lower for kv in known_values)
+                        if is_known or len(value_name.split()) <= 3:
+                            found_values.append(value_name)
 
-                # FIRST: Check if this line contains a SATS value (using flexible matching)
-                sats_val_found = find_sats_value_in_text(clean_line)
-                if sats_val_found and sats_val_found.title() not in values:
-                    values.append(sats_val_found.title())
-                    continue  # Move to next line after finding a SATS value
+                if found_values:
+                    return found_values[:10]
 
-                # Remove explanatory text after value name (after colon, dash, etc.)
-                value_name = clean_line
-                if ':' in clean_line:
-                    value_name = clean_line.split(':')[0].strip()
-                if ' - ' in value_name:
-                    value_name = value_name.split(' - ')[0].strip()
-                if '–' in value_name:
-                    value_name = value_name.split('–')[0].strip()
-                if ' – ' in value_name:
-                    value_name = value_name.split(' – ')[0].strip()
-
-                # Clean any remaining artifacts
-                value_name = self._clean_extracted_text(value_name)
-
-                # Check if this looks like a value name
-                if value_name and 2 < len(value_name) < 50:
-                    value_lower = value_name.lower()
-
-                    # Check if it matches known values (exact or contains)
-                    is_known_value = any(val == value_lower or val in value_lower for val in common_values)
-
-                    # Or check if it looks like a value name (capitalized, short phrase)
-                    is_capitalized = value_name[0].isupper() if value_name else False
-                    word_count = len(value_name.split())
-                    is_short_phrase = word_count <= 4
-
-                    # Accept if known value or looks like a value name
-                    if is_known_value or (is_capitalized and is_short_phrase and word_count >= 1):
-                        # Avoid duplicates and exclude things that look like headers or other content
-                        # Extended list to exclude business segments, service names, and non-value terms
-                        excluded_start_terms = [
-                            'values', 'culture', 'sats', 'our ', 'the ', 'and ',
-                            'page', 'restricted', 'confidential'
-                        ]
-                        excluded_contain_terms = [
-                            # Business segments and services (not values)
-                            'services', 'service', 'gateway', 'solutions', 'operations',
-                            'business', 'division', 'segment', 'unit', 'department',
-                            'group', 'company', 'corporate', 'enterprise',
-                            # Functional areas (not values)
-                            'management', 'marketing', 'finance', 'logistics', 'cargo',
-                            'aviation', 'catering', 'food', 'travel', 'airline',
-                            # Geographic regions (not values)
-                            'emeaa', 'emea', 'apac', 'americas', 'asia', 'europe',
-                            'pacific', 'region', 'global', 'international', 'centralized',
-                            'examination', 'countries', 'territories',
-                            # Other non-value terms
-                            'strategy', 'strategic', 'objective', 'goal', 'target',
-                            'initiative', 'project', 'program', 'plan',
-                            'performance', 'leadership', 'service excellence',
-                            # E-commerce and technology terms
-                            'e-commerce', 'ecommerce', 'digital', 'technology', 'platform',
-                            'offerings', 'provider', 'best-in-class'
-                        ]
-                        excluded_end_terms = ['values', 'culture', 'services', 'solutions']
-
-                        value_lower = value_name.lower()
-                        is_excluded = (
-                            value_lower in [v.lower() for v in values] or  # Already in list
-                            any(value_lower.startswith(term) for term in excluded_start_terms) or
-                            any(value_lower.endswith(term) for term in excluded_end_terms) or
-                            any(term in value_lower for term in excluded_contain_terms)
-                        )
-
-                        if not is_excluded:
-                            values.append(value_name)
-
-                # Detect end of values section (new section header or too many lines)
-                if lines_since_start > 25:
-                    break
-                # Check if this line looks like a new section header
-                if (line_clean.endswith(':') and len(line_clean) < 40 and
-                    not any(h in line_lower for h in ['value', 'culture', 'belief', 'principle']) and
-                    lines_since_start > 2):
-                    break
-
-        # If found values, return them
-        if values:
-            return values[:10]
-
-        # Fallback: Look for SATS values anywhere in document using flexible matching
-        found_sats = set()
-        for canonical, variations in sats_value_variations.items():
-            for var in variations:
-                if var in text_lower:
-                    found_sats.add(canonical)
-                    break  # Found this value, move to next
-        # Return if we found at least 2 SATS values (lowered from 3)
-        if len(found_sats) >= 2:
-            # Return in the correct order
-            ordered_sats = [sv.title() for sv in sats_values if sv in found_sats]
-            return ordered_sats
-
-        # Second fallback: Look for common values mentioned near value/culture keywords
-        for value in common_values:
-            if value in text_lower:
-                # Check if it's mentioned in a values/culture context
-                value_patterns = [
-                    rf'value[s]?[:\s].*\b{value}\b',
-                    rf'\b{value}\b.*value',
-                    rf'core.*\b{value}\b',
-                    rf'we (?:value|believe in).*\b{value}\b',
-                    rf'culture.*\b{value}\b',
-                    rf'\b{value}\b.*culture',
-                    rf'people.*\b{value}\b',
-                    # DNA-related patterns
-                    rf'dna.*\b{value}\b',
-                    rf'\b{value}\b.*dna',
-                    rf'our dna.*\b{value}\b',
-                    # Way-related patterns
-                    rf'way.*\b{value}\b',
-                    rf'\b{value}\b.*way',
-                    rf'how we.*\b{value}\b',
-                    # Behaviors and mindset patterns
-                    rf'behavior.*\b{value}\b',
-                    rf'mindset.*\b{value}\b',
-                    rf'principle.*\b{value}\b',
-                ]
-                for pattern in value_patterns:
-                    if re.search(pattern, text_lower):
-                        if value.title() not in values:
-                            values.append(value.title())
-                        break
-
-        # Third fallback: Look for numbered or bulleted lists near values/culture headers
-        if not values:
-            # Terms to exclude from values (business segments, services, geographic, etc.)
-            fallback_excluded_terms = [
-                'services', 'service', 'gateway', 'solutions', 'operations',
-                'business', 'division', 'segment', 'management', 'logistics',
-                'cargo', 'aviation', 'catering', 'food', 'travel', 'airline',
-                'strategy', 'strategic', 'objective', 'goal', 'values', 'culture',
-                # Geographic regions
-                'emeaa', 'emea', 'apac', 'americas', 'asia', 'europe', 'pacific',
-                'region', 'global', 'international', 'centralized', 'examination',
-                # E-commerce and technology
-                'e-commerce', 'ecommerce', 'digital', 'technology', 'platform',
-                'offerings', 'provider', 'best-in-class'
-            ]
-            for i, line in enumerate(lines):
-                line_lower = line.strip().lower()
-                # Culture-related keywords - be more specific to avoid false positives
-                culture_keywords = ['our values', 'core values', 'people values', 'our culture', 'our beliefs', 'our principles']
-                if any(h in line_lower for h in culture_keywords):
-                    # Scan next lines for bullet/numbered items
-                    for j in range(i + 1, min(i + 15, len(lines))):
-                        next_line = lines[j].strip()
-                        if re.match(r'^[\d\.\-•*○●►▪→]\s*\w', next_line):
-                            clean_val = re.sub(r'^[\s\-•*\d.○◯●►▪→]+', '', next_line).strip()
-                            if ':' in clean_val:
-                                clean_val = clean_val.split(':')[0].strip()
-                            clean_val = self._clean_extracted_text(clean_val)
-                            clean_val_lower = clean_val.lower() if clean_val else ''
-                            # Check it's a valid value and not a business term
-                            if (clean_val and 2 < len(clean_val) < 40 and clean_val[0].isupper() and
-                                clean_val not in values and
-                                not any(term in clean_val_lower for term in fallback_excluded_terms)):
-                                    values.append(clean_val)
-
-        if not values:
-            return []  # Return empty list instead of message - let UI handle display
-
-        return values[:10]  # Cap at 10 values
+        # No values found under headers
+        return []
 
     def _detect_company_name(self, text: str) -> Optional[str]:
         """Detect company name from document text for use in pattern matching.
