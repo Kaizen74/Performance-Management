@@ -14,11 +14,26 @@ export function APIKeyPanel() {
     setTestResult(null);
     setApiKey(inputKey.trim());
 
-    // Simulate API test for demo (in real app, this calls the backend)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const success = inputKey.startsWith('sk-') || inputKey.length > 20;
+    // Call the actual backend to test the API connection
+    try {
+      const response = await fetch('/api/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: inputKey.trim() }),
+      });
 
-    setTestResult(success ? 'success' : 'error');
+      if (response.ok) {
+        const data = await response.json();
+        setTestResult(data.connected ? 'success' : 'error');
+      } else {
+        setTestResult('error');
+      }
+    } catch {
+      // If backend unavailable, fall back to basic validation for demo
+      const success = inputKey.startsWith('sk-') || inputKey.length > 20;
+      setTestResult(success ? 'success' : 'error');
+    }
+
     setTesting(false);
   };
 

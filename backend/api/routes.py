@@ -59,16 +59,19 @@ recommendation_store = {}
 @router.post("/test-connection")
 async def test_connection(request: APIKeyRequest):
     """Test API key connection."""
-    if USE_MOCK:
-        # Mock always succeeds for demo
+    # Use real Claude client if API key is provided, otherwise use mock
+    if request.apiKey and request.apiKey.strip():
+        try:
+            client = ClaudeClient(api_key=request.apiKey)
+            connected = client.test_connection()
+            return {"connected": connected, "message": "Connection successful" if connected else "Connection failed"}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    elif USE_MOCK:
+        # Mock always succeeds for demo when no API key provided
         return {"connected": True, "message": "Connection successful (mock mode)"}
-
-    try:
-        client = ClaudeClient(api_key=request.apiKey)
-        connected = client.test_connection()
-        return {"connected": connected, "message": "Connection successful" if connected else "Connection failed"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    else:
+        raise HTTPException(status_code=400, detail="API key required")
 
 
 @router.post("/upload/goals-table")
