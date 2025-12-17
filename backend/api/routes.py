@@ -26,7 +26,8 @@ from exports import ExcelExportEngine, PDFExportEngine
 
 router = APIRouter()
 
-# Use mock clients by default (set USE_MOCK=false for real API)
+# USE_MOCK controls behavior when NO API key is provided
+# When an API key IS provided, always use the real Claude client
 USE_MOCK = os.environ.get('USE_MOCK', 'true').lower() == 'true'
 
 
@@ -171,6 +172,18 @@ async def upload_document(
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_ext}")
 
     try:
+        # Clear previous documents of same type to prevent stale data
+        if document_type == 'strategy':
+            # Clear old strategy documents and framework
+            old_strategy_ids = [
+                doc_id for doc_id, doc in document_store.items()
+                if doc.get('documentType') == 'strategy'
+            ]
+            for doc_id in old_strategy_ids:
+                del document_store[doc_id]
+            # Clear old framework since we're uploading new strategy
+            framework_store.clear()
+
         # Save to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
             content = await file.read()
@@ -249,10 +262,16 @@ async def analyze_strategy(api_key: str = Body(..., embed=True)):
         raise HTTPException(status_code=400, detail="No strategy documents uploaded")
 
     try:
-        if USE_MOCK:
+        # Clear old framework data to prevent stale results
+        framework_store.clear()
+
+        # Use real Claude client if API key is provided, otherwise use mock
+        if api_key and api_key.strip():
+            client = ClaudeClient(api_key=api_key)
+        elif USE_MOCK:
             client = MockClaudeClient()
         else:
-            client = ClaudeClient(api_key=api_key)
+            raise HTTPException(status_code=400, detail="API key required")
 
         synthesizer = StrategySynthesizer(claude_client=client)
         framework = synthesizer.analyze(strategy_docs)
@@ -290,10 +309,13 @@ async def analyze_goals(
         raise HTTPException(status_code=400, detail="No strategic framework available")
 
     try:
-        if USE_MOCK:
+        # Use real Claude client if API key is provided, otherwise use mock
+        if api_key and api_key.strip():
+            client = ClaudeClient(api_key=api_key)
+        elif USE_MOCK:
             client = MockAlignmentClient()
         else:
-            client = ClaudeClient(api_key=api_key)
+            raise HTTPException(status_code=400, detail="API key required")
 
         analyzer = AlignmentAnalyzer(framework, claude_client=client)
         analyses = analyzer.analyze_batch(goal_docs)
@@ -336,10 +358,13 @@ async def generate_portfolio_recommendations(
     all_analyses = list(analysis_store.values())
 
     try:
-        if USE_MOCK:
+        # Use real Claude client if API key is provided, otherwise use mock
+        if api_key and api_key.strip():
+            client = ClaudeClient(api_key=api_key)
+        elif USE_MOCK:
             client = MockRecommendationClient()
         else:
-            client = ClaudeClient(api_key=api_key)
+            raise HTTPException(status_code=400, detail="API key required")
 
         # Generate portfolio recommendations
         recommendations = client.generate_portfolio_recommendations(framework, all_analyses)
@@ -378,10 +403,13 @@ async def generate_recommendations(
     framework = list(framework_store.values())[0]
 
     try:
-        if USE_MOCK:
+        # Use real Claude client if API key is provided, otherwise use mock
+        if api_key and api_key.strip():
+            client = ClaudeClient(api_key=api_key)
+        elif USE_MOCK:
             client = MockRecommendationClient()
         else:
-            client = ClaudeClient(api_key=api_key)
+            raise HTTPException(status_code=400, detail="API key required")
 
         engine = GoalRecommendationEngine(claude_client=client)
         recommendations = engine.generate_recommendations(framework, analysis, analysis)
