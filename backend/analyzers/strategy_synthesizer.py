@@ -788,24 +788,34 @@ class MockClaudeClient:
         return f"Focus on {keywords[0]} initiatives"
 
     def _is_coherent_text(self, text: str) -> bool:
-        """Check if text is a coherent sentence/phrase, not fragmented keywords."""
+        """Check if text is a coherent objective statement, not fragmented keywords."""
         import re
 
         # Too short or too long
-        if len(text) < 15 or len(text) > 300:
+        if len(text) < 20 or len(text) > 200:
             return False
 
         # Count words
         words = text.split()
-        if len(words) < 4:
+        if len(words) < 5 or len(words) > 30:
             return False
 
-        # Check for common sentence structure indicators
+        # Must start with a capital letter (proper sentence start)
+        if not text[0].isupper():
+            return False
+
+        # Should NOT start with conjunctions or prepositions (indicates fragment)
+        fragment_starts = ['and ', 'or ', 'but ', 'in ', 'on ', 'at ', 'to ', 'for ',
+                          'with ', 'from ', 'by ', 'as ', 'into ', 'through ', 'across ']
+        if any(text.lower().startswith(start) for start in fragment_starts):
+            return False
+
         # Should have at least one verb-like word
         action_words = ['achieve', 'improve', 'increase', 'reduce', 'maintain', 'deliver',
                         'ensure', 'drive', 'develop', 'build', 'create', 'implement',
                         'establish', 'enhance', 'optimize', 'grow', 'expand', 'strengthen',
-                        'provide', 'support', 'enable', 'transform', 'lead', 'manage']
+                        'provide', 'support', 'enable', 'transform', 'lead', 'manage',
+                        'leverage', 'continue', 'innovate', 'scale']
 
         has_action = any(word in text.lower() for word in action_words)
         if not has_action:
@@ -814,7 +824,7 @@ class MockClaudeClient:
         # Check it's not just a list of keywords (should have connecting words)
         connecting_words = ['the', 'to', 'and', 'of', 'in', 'for', 'by', 'with', 'our', 'a', 'an', 'through']
         connecting_count = sum(1 for word in words if word.lower() in connecting_words)
-        if connecting_count < 1:
+        if connecting_count < 2:
             return False
 
         # Shouldn't start with ## or other markdown artifacts
@@ -823,6 +833,10 @@ class MockClaudeClient:
 
         # Shouldn't be all caps (likely a heading misidentified)
         if text.isupper():
+            return False
+
+        # Should end properly (not mid-sentence)
+        if text.endswith(' and') or text.endswith(' or') or text.endswith(' the'):
             return False
 
         return True
@@ -848,43 +862,55 @@ class MockClaudeClient:
         return text
 
     def _extract_objectives(self, text: str, themes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-        """Extract strategic objectives organized by BSC perspective."""
+        """Extract strategic objectives organized by BSC perspective.
+
+        Focuses on extracting complete, coherent objective statements,
+        avoiding fragmented text or partial sentences.
+        """
         import re
 
         perspectives = {
-            "financial": {"objectives": [], "keywords": ['revenue', 'profit', 'cost', 'margin', 'growth', 'roi', 'shareholder', 'ebitda', 'financial']},
-            "customer": {"objectives": [], "keywords": ['customer', 'client', 'satisfaction', 'nps', 'market share', 'loyalty', 'service']},
-            "internalProcess": {"objectives": [], "keywords": ['process', 'operational', 'efficiency', 'quality', 'delivery', 'cycle time', 'productivity']},
-            "learningGrowth": {"objectives": [], "keywords": ['employee', 'training', 'skill', 'talent', 'culture', 'capability', 'engagement', 'learning']}
+            "financial": {"objectives": [], "keywords": ['revenue', 'profit', 'cost', 'margin', 'growth', 'roi', 'shareholder', 'ebitda', 'financial', 'returns']},
+            "customer": {"objectives": [], "keywords": ['customer', 'client', 'satisfaction', 'nps', 'market', 'loyalty', 'service', 'network', 'hub', 'offering']},
+            "internalProcess": {"objectives": [], "keywords": ['process', 'operational', 'efficiency', 'quality', 'delivery', 'productivity', 'capability', 'system']},
+            "learningGrowth": {"objectives": [], "keywords": ['employee', 'training', 'skill', 'talent', 'culture', 'capability', 'engagement', 'learning', 'people', 'workforce']}
         }
 
-        text_lower = text.lower()
         theme_names = [t['name'].lower() for t in themes]
+        found_objectives = []
+        lines = text.split('\n')
 
-        # Look for objective-like statements
-        objective_patterns = [
-            r'(?:objective|goal|target|aim)[:\s]+([^\n.]{20,150})',
-            r'(?:achieve|attain|reach|improve|increase|reduce|maintain)[:\s]+([^\n.]{15,150})',
-            r'(?:by \d{4})[,\s]+([^\n.]{20,150})',
-            r'(\d+%[^\n.]{10,100})',
+        # Action verbs that typically start objectives
+        action_starts = [
+            'achieve', 'improve', 'increase', 'reduce', 'maintain', 'deliver',
+            'ensure', 'drive', 'develop', 'build', 'create', 'implement',
+            'establish', 'enhance', 'optimize', 'grow', 'expand', 'strengthen',
+            'provide', 'support', 'enable', 'transform', 'lead', 'manage',
+            'leverage', 'continue', 'innovate', 'scale', 'we will', 'focus on'
         ]
 
-        found_objectives = []
-        for pattern in objective_patterns:
-            matches = re.findall(pattern, text_lower)
-            for match in matches:
-                cleaned = self._clean_objective_text(match)
-                if cleaned not in found_objectives and self._is_coherent_text(cleaned):
-                    found_objectives.append(cleaned)
-
-        # Also look for bullet points and numbered items that look like objectives
-        lines = text.split('\n')
+        # Extract objectives from complete lines that start with action verbs
         for line in lines:
-            line_clean = re.sub(r'^[\s\-•*\d.]+', '', line).strip()
-            line_clean = self._clean_objective_text(line_clean)
-            if self._is_coherent_text(line_clean):
-                if line_clean.lower() not in [o.lower() for o in found_objectives]:
-                    found_objectives.append(line_clean)
+            # Clean bullet points and numbering at start
+            line_clean = re.sub(r'^[\s\-•*\d.○◯●►▪→A-C\)\]]+', '', line).strip()
+
+            # Skip short lines or metadata
+            if len(line_clean) < 25:
+                continue
+            if self._is_metadata_line(line_clean):
+                continue
+
+            # Check if line starts with an action word (good objective indicator)
+            line_lower = line_clean.lower()
+            starts_with_action = any(line_lower.startswith(action) for action in action_starts)
+
+            if starts_with_action:
+                # Clean and validate
+                cleaned = self._clean_objective_text(line_clean)
+                if self._is_coherent_text(cleaned):
+                    # Avoid duplicates
+                    if cleaned.lower() not in [o.lower() for o in found_objectives]:
+                        found_objectives.append(cleaned)
 
         # Categorize objectives by perspective
         obj_counters = {'F': 1, 'C': 1, 'P': 1, 'L': 1}
