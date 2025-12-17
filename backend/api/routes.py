@@ -459,18 +459,32 @@ async def reset_all():
     return {"reset": True}
 
 
-@router.post("/export/excel")
-async def export_excel():
-    """Export all analyses to Excel workbook."""
-    if not framework_store:
-        raise HTTPException(status_code=400, detail="No strategic framework available")
-    if not analysis_store:
-        raise HTTPException(status_code=400, detail="No analyses available to export")
+class ExportRequest(BaseModel):
+    """Request body for export endpoints."""
+    framework: Optional[dict] = None
+    analyses: Optional[List[dict]] = None
+    recommendations: Optional[dict] = None
 
-    try:
+
+@router.post("/export/excel")
+async def export_excel(request: Optional[ExportRequest] = None):
+    """Export all analyses to Excel workbook."""
+    # Use request body data if provided, otherwise fall back to stores
+    if request and request.framework and request.analyses:
+        framework = request.framework
+        analyses = request.analyses
+        recs = request.recommendations or {}
+    else:
+        # Fall back to stored data
+        if not framework_store:
+            raise HTTPException(status_code=400, detail="No strategic framework available. Please provide data in request body or complete analysis first.")
+        if not analysis_store:
+            raise HTTPException(status_code=400, detail="No analyses available to export. Please provide data in request body or complete analysis first.")
         framework = list(framework_store.values())[0]
         analyses = list(analysis_store.values())
+        recs = recommendation_store
 
+    try:
         # Create temp file for export
         with tempfile.NamedTemporaryFile(
             suffix='.xlsx',
@@ -480,7 +494,7 @@ async def export_excel():
             output_path = tmp.name
 
         # Generate Excel workbook
-        engine = ExcelExportEngine(framework, analyses, recommendation_store)
+        engine = ExcelExportEngine(framework, analyses, recs)
         engine.generate_workbook(output_path)
 
         return FileResponse(
@@ -495,17 +509,24 @@ async def export_excel():
 
 
 @router.post("/export/pdf")
-async def export_pdf():
+async def export_pdf(request: Optional[ExportRequest] = None):
     """Export analysis summary to PDF report."""
-    if not framework_store:
-        raise HTTPException(status_code=400, detail="No strategic framework available")
-    if not analysis_store:
-        raise HTTPException(status_code=400, detail="No analyses available to export")
-
-    try:
+    # Use request body data if provided, otherwise fall back to stores
+    if request and request.framework and request.analyses:
+        framework = request.framework
+        analyses = request.analyses
+        recs = request.recommendations or {}
+    else:
+        # Fall back to stored data
+        if not framework_store:
+            raise HTTPException(status_code=400, detail="No strategic framework available. Please provide data in request body or complete analysis first.")
+        if not analysis_store:
+            raise HTTPException(status_code=400, detail="No analyses available to export. Please provide data in request body or complete analysis first.")
         framework = list(framework_store.values())[0]
         analyses = list(analysis_store.values())
+        recs = recommendation_store
 
+    try:
         # Create temp file for export
         with tempfile.NamedTemporaryFile(
             suffix='.pdf',
@@ -515,7 +536,7 @@ async def export_pdf():
             output_path = tmp.name
 
         # Generate PDF report
-        engine = PDFExportEngine(framework, analyses, recommendation_store)
+        engine = PDFExportEngine(framework, analyses, recs)
         engine.generate_report(output_path)
 
         return FileResponse(

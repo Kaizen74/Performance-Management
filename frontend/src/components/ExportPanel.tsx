@@ -12,7 +12,7 @@ interface ExportState {
 }
 
 export function ExportPanel() {
-  const { goalAnalyses, strategicFramework, setCurrentStep } = useAnalysis();
+  const { goalAnalyses, strategicFramework, recommendations, setCurrentStep } = useAnalysis();
   const [excelStatus, setExcelStatus] = useState<ExportStatus>('idle');
   const [pdfStatus, setPdfStatus] = useState<ExportStatus>('idle');
   const [exportState, setExportState] = useState<ExportState>({
@@ -62,8 +62,24 @@ export function ExportPanel() {
     setError(null);
 
     try {
+      // Build recommendations map from stored recommendations
+      const recsMap: Record<string, any> = {};
+      recommendations.forEach(rec => {
+        if (rec.documentId) {
+          recsMap[rec.documentId] = rec;
+        }
+      });
+
       const response = await fetch('/api/export/excel', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          framework: strategicFramework,
+          analyses: goalAnalyses,
+          recommendations: recsMap,
+        }),
       });
 
       if (!response.ok) {
@@ -98,8 +114,24 @@ export function ExportPanel() {
     setError(null);
 
     try {
+      // Build recommendations map from stored recommendations
+      const recsMap: Record<string, any> = {};
+      recommendations.forEach(rec => {
+        if (rec.documentId) {
+          recsMap[rec.documentId] = rec;
+        }
+      });
+
       const response = await fetch('/api/export/pdf', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          framework: strategicFramework,
+          analyses: goalAnalyses,
+          recommendations: recsMap,
+        }),
       });
 
       if (!response.ok) {
