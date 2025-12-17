@@ -371,34 +371,38 @@ class MockClaudeClient:
     def _extract_vision(self, text: str) -> str:
         """Extract vision statement from document text.
 
-        STRICTLY header-based: Only extracts content directly below a 'Vision' header.
+        STRICTLY header-based: Only extracts content from 'Vision' header lines.
+        Handles both "Vision: content" and "Vision" + content on next line formats.
         """
         import re
 
         lines = text.split('\n')
 
-        # Look for "Vision" as a clear header line
+        # Look for "Vision" as a header
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Check if this line is a vision header
-            # Must be a short line that clearly indicates a vision section
+            # Check for "VISION: content" format (content on same line)
+            if line_lower.startswith('vision:') or line_lower.startswith('our vision:'):
+                # Extract content after the colon
+                colon_pos = line_clean.find(':')
+                if colon_pos != -1:
+                    content = line_clean[colon_pos + 1:].strip()
+                    if content and len(content) > 20:
+                        return self._clean_extracted_text(content.strip('"\''))
+
+            # Check for header-only line (content on next line)
             is_vision_header = False
             vision_header_patterns = [
                 'vision', 'our vision', 'vision statement', 'company vision',
                 'corporate vision', 'strategic vision'
             ]
 
-            # Line must be short (header-like) and match a vision pattern
             if len(line_clean) < 50:
                 line_stripped = line_lower.strip(':').strip()
                 if line_stripped in vision_header_patterns:
                     is_vision_header = True
-                elif line_clean.endswith(':') and any(p in line_lower for p in ['vision']):
-                    # "Vision:" or "Our Vision:" style headers
-                    if 'mission' not in line_lower and 'value' not in line_lower:
-                        is_vision_header = True
 
             if is_vision_header:
                 # Collect content directly below the header
@@ -412,12 +416,10 @@ class MockClaudeClient:
                     # Stop at empty line after we've collected content
                     if not next_line and vision_parts:
                         break
-                    # Stop at new section headers (short lines ending with : or containing section keywords)
+                    # Stop at new section headers
                     if len(next_line) < 50:
                         next_lower = next_line.lower()
-                        if next_line.endswith(':'):
-                            break
-                        if any(h in next_lower for h in ['mission', 'purpose', 'values', 'culture', 'strategy', 'objective']):
+                        if next_line.endswith(':') or any(h in next_lower for h in ['mission', 'purpose', 'values', 'culture', 'strategy', 'objective']):
                             break
                     # Skip metadata lines
                     if self._is_metadata_line(next_line):
@@ -487,18 +489,30 @@ class MockClaudeClient:
     def _extract_mission(self, text: str) -> str:
         """Extract mission/purpose statement from document text.
 
-        STRICTLY header-based: Only extracts content directly below a 'Mission' or 'Purpose' header.
+        STRICTLY header-based: Only extracts content from 'Mission' or 'Purpose' header lines.
+        Handles both "Mission: content" and "Mission" + content on next line formats.
         """
         import re
 
         lines = text.split('\n')
 
-        # Look for "Mission" or "Purpose" as a clear header line
+        # Look for "Mission" or "Purpose" as a header
         for i, line in enumerate(lines):
             line_clean = line.strip()
             line_lower = line_clean.lower()
 
-            # Check if this line is a mission/purpose header
+            # Check for "MISSION: content" format (content on same line)
+            mission_prefixes = ['mission:', 'our mission:', 'purpose:', 'our purpose:']
+            for prefix in mission_prefixes:
+                if line_lower.startswith(prefix):
+                    # Extract content after the colon
+                    colon_pos = line_clean.find(':')
+                    if colon_pos != -1:
+                        content = line_clean[colon_pos + 1:].strip()
+                        if content and len(content) > 15:
+                            return self._clean_extracted_text(content.strip('"\''))
+
+            # Check for header-only line (content on next line)
             is_mission_header = False
             mission_header_patterns = [
                 'mission', 'our mission', 'mission statement', 'company mission',
@@ -506,15 +520,10 @@ class MockClaudeClient:
                 'corporate mission', 'corporate purpose'
             ]
 
-            # Line must be short (header-like) and match a mission/purpose pattern
             if len(line_clean) < 50:
                 line_stripped = line_lower.strip(':').strip()
                 if line_stripped in mission_header_patterns:
                     is_mission_header = True
-                elif line_clean.endswith(':') and any(p in line_lower for p in ['mission', 'purpose']):
-                    # "Mission:" or "Our Purpose:" style headers
-                    if 'vision' not in line_lower and 'value' not in line_lower:
-                        is_mission_header = True
 
             if is_mission_header:
                 # Collect content directly below the header
@@ -531,9 +540,7 @@ class MockClaudeClient:
                     # Stop at new section headers
                     if len(next_line) < 50:
                         next_lower = next_line.lower()
-                        if next_line.endswith(':'):
-                            break
-                        if any(h in next_lower for h in ['vision', 'values', 'culture', 'strategy', 'objective']):
+                        if next_line.endswith(':') or any(h in next_lower for h in ['vision', 'values', 'culture', 'strategy', 'objective']):
                             break
                     # Skip metadata lines
                     if self._is_metadata_line(next_line):
