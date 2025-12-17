@@ -7,6 +7,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .claude_client import ClaudeClient
 
@@ -221,37 +222,72 @@ class AlignmentAnalyzer:
 
         return context
 
-    def analyze_batch(self, goal_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def analyze_batch(self, goal_documents: List[Dict[str, Any]], max_workers: int = 5) -> List[Dict[str, Any]]:
         """
-        Analyze multiple goal documents.
+        Analyze multiple goal documents in parallel for improved performance.
 
         Args:
             goal_documents: List of processed goal documents
+            max_workers: Maximum concurrent API calls (default 5 to respect rate limits)
 
         Returns:
-            List of analysis results
+            List of analysis results in original document order
         """
         if len(goal_documents) > self.MAX_GOAL_DOCUMENTS:
             raise ValueError(f"Maximum {self.MAX_GOAL_DOCUMENTS} documents allowed")
 
-        results = []
-        for doc in goal_documents:
+        # For single document, no need for threading overhead
+        if len(goal_documents) <= 1:
+            results = []
+            for doc in goal_documents:
+                try:
+                    result = self.analyze(doc)
+                    results.append(result)
+                except Exception as e:
+                    results.append(self._create_error_result(doc, str(e)))
+            return results
+
+        # Use ThreadPoolExecutor for parallel API calls (I/O bound)
+        results = [None] * len(goal_documents)  # Pre-allocate to maintain order
+
+        def analyze_with_index(index_doc_tuple):
+            """Wrapper to analyze document and track its original index."""
+            index, doc = index_doc_tuple
             try:
-                result = self.analyze(doc)
-                results.append(result)
+                return index, self.analyze(doc), None
             except Exception as e:
-                results.append({
-                    'documentId': str(uuid.uuid4()),
-                    'fileName': doc.get('fileName', 'Unknown'),
-                    'error': str(e),
-                    'overallAlignmentScore': 0,
-                    'overallImpactScore': 0,
-                    'goals': [],
-                    'strategicCoverage': {},
-                    'recommendations': []
-                })
+                return index, None, (doc, str(e))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            futures = [
+                executor.submit(analyze_with_index, (i, doc))
+                for i, doc in enumerate(goal_documents)
+            ]
+
+            # Collect results as they complete
+            for future in as_completed(futures):
+                index, result, error_info = future.result()
+                if result is not None:
+                    results[index] = result
+                else:
+                    doc, error_msg = error_info
+                    results[index] = self._create_error_result(doc, error_msg)
 
         return results
+
+    def _create_error_result(self, doc: Dict[str, Any], error_msg: str) -> Dict[str, Any]:
+        """Create a standardized error result for failed document analysis."""
+        return {
+            'documentId': str(uuid.uuid4()),
+            'fileName': doc.get('fileName', 'Unknown'),
+            'error': error_msg,
+            'overallAlignmentScore': 0,
+            'overallImpactScore': 0,
+            'goals': [],
+            'strategicCoverage': {},
+            'recommendations': []
+        }
 
     def _validate_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """

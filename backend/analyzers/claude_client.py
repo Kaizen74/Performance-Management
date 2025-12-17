@@ -224,148 +224,57 @@ Return ONLY valid JSON matching this structure:
         """
         import json
 
-        system_prompt = """You are an expert in performance management, strategy execution, and organizational effectiveness.
-You analyze employee goals against organizational strategy to assess alignment, coherence, and strategic impact.
-Use semantic understanding to evaluate how well goals translate organizational strategy into role-appropriate actions.
-Consider the employee's position, seniority level, and scope of influence when evaluating goal appropriateness.
-IMPORTANT: Always explicitly reference the specific vision, mission, and strategic objectives when explaining alignment.
+        system_prompt = """You are an expert in performance management and strategy execution.
+Analyze employee goals against organizational strategy. Reference specific vision, mission, and objectives.
 Always return valid JSON."""
 
-        # Extract key strategic elements for explicit referencing
+        # Extract key strategic elements
         org_purpose = strategic_framework.get('organizationalPurpose', {})
         vision = org_purpose.get('vision', 'Not specified')
         mission = org_purpose.get('mission', 'Not specified')
         values = org_purpose.get('values', [])
+        themes = [t.get('name', '') for t in strategic_framework.get('strategicThemes', []) if t.get('name')]
 
-        strategic_themes = strategic_framework.get('strategicThemes', [])
-        theme_names = [t.get('name', '') for t in strategic_themes if t.get('name')]
-
-        # Build strategic reference summary
-        strategic_summary = f"""
-KEY STRATEGIC REFERENCE POINTS (use these explicitly in your analysis):
+        # Build compact strategic summary
+        strategic_ref = f"""STRATEGIC REFERENCE:
 - VISION: "{vision}"
 - MISSION: "{mission}"
-- VALUES: {', '.join(values) if values else 'Not specified'}
-- STRATEGIC THEMES: {', '.join(theme_names) if theme_names else 'Not specified'}
-"""
+- VALUES: {', '.join(values) if values else 'N/A'}
+- THEMES: {', '.join(themes) if themes else 'N/A'}"""
 
-        # Build employee context section if available
-        employee_section = ""
+        # Build employee context
+        emp_section = ""
         if employee_context:
-            employee_section = f"""
-EMPLOYEE CONTEXT:
-- Name: {employee_context.get('employeeName', 'Unknown')}
-- Job Title: {employee_context.get('jobTitle', 'Not specified')}
-- Department: {employee_context.get('department', 'Not specified')}
-- Seniority Level: {employee_context.get('seniorityLevel', 'Not specified')}
-"""
-            # Include goal weights if available
+            emp_section = f"""
+EMPLOYEE: {employee_context.get('employeeName', 'Unknown')} | {employee_context.get('jobTitle', 'N/A')} | {employee_context.get('department', 'N/A')} | {employee_context.get('seniorityLevel', 'N/A')}"""
             goals_with_weights = employee_context.get('goalsWithWeights', [])
             if goals_with_weights:
-                employee_section += "\nGOAL WEIGHTS:\n"
-                for gw in goals_with_weights:
-                    weight = gw.get('weight', 'N/A')
-                    employee_section += f"- {gw.get('goalText', '')[:80]}... (Weight: {weight})\n"
+                emp_section += "\nGOAL WEIGHTS: " + "; ".join([f"{gw.get('goalText', '')[:60]}({gw.get('weight', 'N/A')})" for gw in goals_with_weights[:5]])
 
-        prompt = f"""Analyze the alignment between employee goals and the strategic framework, considering the employee's role and level.
-{strategic_summary}
-FULL STRATEGIC FRAMEWORK:
-{json.dumps(strategic_framework, indent=2)}
-{employee_section}
-EMPLOYEE GOAL DOCUMENT:
+        # Compact objectives summary (avoid sending full framework JSON when possible)
+        objectives_summary = []
+        for perspective in ['financial', 'customer', 'internalProcess', 'learningGrowth']:
+            objs = strategic_framework.get('strategicPerspectives', {}).get(perspective, {}).get('objectives', [])
+            for obj in objs[:4]:  # Limit to 4 per perspective
+                objectives_summary.append(f"{obj.get('id', '?')}: {obj.get('objective', '')[:80]}")
+
+        prompt = f"""Analyze goal alignment with strategic framework.
+
+{strategic_ref}
+
+STRATEGIC OBJECTIVES:
+{chr(10).join(objectives_summary)}
+{emp_section}
+
+GOALS TO ANALYZE:
 {goal_document_text}
 
-ANALYSIS REQUIREMENTS:
+SCORING (0-100):
+- Alignment: 40% objective mapping, 30% vision/mission, 20% theme alignment, 10% role fit
+- Impact: Scope of influence and strategic leverage
+- Coherence: Internal consistency and balanced coverage
 
-0. STRATEGY-GOAL COHERENCE CHECK (CRITICAL - DO THIS FIRST):
-   - Assess whether the employee's goals appear to be relevant to this specific organizational strategy
-   - Look for MISMATCHES: Do the goals reference different strategic priorities, different industry context, or different organizational focus than the strategy documents?
-   - If goals mention specific initiatives, products, or priorities NOT found in the strategy, flag this as a potential mismatch
-   - Consider if the employee might be from a different team/department than the strategy document covers
-   - Provide a coherence confidence score (0-100) indicating how confident you are these goals belong to this strategy
-
-1. EXPLICIT STRATEGIC TIE-BACK: For each goal, you MUST:
-   - Quote or directly reference which part of the vision/mission this goal supports
-   - Identify which specific strategic themes from the framework this goal addresses
-   - Explain how this goal contributes to the stated organizational values
-   - Map to specific strategic objectives by ID (F1, C2, P3, L1, etc.)
-
-2. ROLE-APPROPRIATE ALIGNMENT: For each goal, assess:
-   - Does this goal reflect appropriate strategic translation for this role/level?
-   - For executives: Are goals focused on enterprise-wide outcomes and strategic enablement?
-   - For senior staff: Do goals bridge strategy to operational excellence?
-   - For mid-level: Are goals focused on team/functional contributions to strategic objectives?
-   - For junior staff: Do goals demonstrate understanding of how daily work connects to strategy?
-
-3. GOAL COHERENCE ASSESSMENT: Evaluate the employee's goal SET as a whole:
-   - Internal consistency: Do goals complement each other or conflict?
-   - Balanced coverage: Does the set address multiple strategic perspectives appropriately for this role?
-   - Weight distribution: If weights provided, is emphasis appropriately placed on strategic priorities?
-   - Scope appropriateness: Are goals within this person's sphere of influence?
-
-4. STRATEGIC TRANSLATION QUALITY:
-   - Does this employee demonstrate understanding of the SPECIFIC organizational strategy provided?
-   - Are goals specific enough to be measurable yet connected to the stated vision and mission?
-   - Do goals show appropriate ambition level for seniority (stretch for seniors, foundational for juniors)?
-
-5. IMPACT ANALYSIS: Evaluate potential strategic contribution:
-   - Direct vs. indirect strategic support
-   - Leverage potential (does this goal enable others' success?)
-   - Timeline alignment with strategic planning horizons
-
-SCORING CRITERIA (CRITICAL - SCORES MUST REFLECT STRATEGY TIE-BACK):
-
-The alignment score is the PRIMARY measure of how well an employee's goals connect to THIS SPECIFIC organizational strategy.
-Calculate scores using the following weighted components:
-
-FOR EACH GOAL'S ALIGNMENT SCORE (0-100):
-1. Strategic Objective Mapping (40% weight):
-   - Does the goal directly map to specific strategic objectives (F1, C2, P3, etc.)?
-   - 100: Clear, direct mapping to 2+ objectives with explicit linkage
-   - 70: Maps to 1 objective with reasonable connection
-   - 40: Weak/indirect connection to objectives
-   - 10: No discernible connection to any strategic objective
-
-2. Vision/Mission Connection (30% weight):
-   - Does the goal actively advance the stated vision and mission?
-   - 100: Goal directly quotes or explicitly references vision/mission elements
-   - 70: Goal clearly supports vision/mission without explicit reference
-   - 40: Tangential relationship to vision/mission
-   - 10: Goal appears disconnected from vision/mission
-
-3. Strategic Theme Alignment (20% weight):
-   - Does the goal address identified strategic themes?
-   - 100: Directly addresses a named strategic theme
-   - 50: Partially related to strategic themes
-   - 10: Does not address any strategic themes
-
-4. Role-Appropriate Translation (10% weight):
-   - Is this goal an appropriate translation of strategy for this employee's level?
-   - 100: Perfect translation for role/seniority
-   - 50: Acceptable but could be better scoped
-   - 10: Mismatched scope for role
-
-FOR OVERALL ALIGNMENT SCORE:
-- If Strategy Coherence Check < 50 (goals appear to be for wrong strategy): Cap overall score at 40
-- Otherwise: Weighted average of individual goal alignment scores, adjusted by:
-  - Strategic Theme Coverage Bonus: +5 if >50% of themes covered, +10 if >75%
-  - Strategic Theme Gap Penalty: -5 for each critical theme not addressed
-  - Coherence Bonus: +5 if goals form a coherent strategic narrative
-
-FOR IMPACT SCORE (0-100):
-- Based on: scope of influence, leverage potential, and strategic multiplier effect
-- Executives: Higher impact potential (can affect enterprise outcomes)
-- Senior: Moderate-high (can affect team/department outcomes)
-- Mid: Moderate (can affect functional outcomes)
-- Junior: Lower but appropriate (can affect individual/task outcomes)
-
-FOR COHERENCE SCORE (0-100):
-- Internal consistency of goal set (no conflicts)
-- Balanced coverage across BSC perspectives
-- Appropriate weight distribution if weights provided
-- Goals tell a unified strategic story
-
-Return ONLY valid JSON matching this structure:
+Return JSON:
 {{
     "overallAlignmentScore": 75,
     "overallImpactScore": 68,
@@ -373,59 +282,59 @@ Return ONLY valid JSON matching this structure:
     "strategyCoherenceCheck": {{
         "confidenceScore": 85,
         "belongsToStrategy": true,
-        "potentialMismatches": ["string - any identified mismatches between goals and strategy context"],
-        "assessment": "Detailed assessment of whether these goals appear to be written for this specific organizational strategy, with evidence"
+        "potentialMismatches": [],
+        "assessment": "Assessment of goal-strategy fit"
     }},
     "strategicTieBack": {{
-        "visionAlignment": "How the goal set as a whole connects to: [quote the vision]",
-        "missionContribution": "How goals support the mission: [quote the mission]",
-        "valuesReflected": ["list which organizational values are reflected in the goals"],
-        "strategicThemesCovered": ["list which strategic themes from the framework are addressed"],
-        "strategicThemesGaps": ["list which strategic themes are NOT addressed by any goals"]
+        "visionAlignment": "How goals connect to vision",
+        "missionContribution": "How goals support mission",
+        "valuesReflected": [],
+        "strategicThemesCovered": [],
+        "strategicThemesGaps": []
     }},
-    "roleAppropriatenessAssessment": "string - assessment of whether goals are appropriate for this role/level",
+    "roleAppropriatenessAssessment": "Assessment",
     "goals": [
         {{
             "goalId": "G1",
-            "goalText": "string",
+            "goalText": "Goal text",
             "alignmentScore": 82,
             "alignmentScoreBreakdown": {{
                 "objectiveMappingScore": 85,
-                "objectiveMappingRationale": "Maps to F1 (revenue growth) and P2 (process efficiency) with clear linkage",
+                "objectiveMappingRationale": "Rationale",
                 "visionMissionScore": 80,
-                "visionMissionRationale": "Supports mission of 'delivering value to stakeholders' through efficiency gains",
+                "visionMissionRationale": "Rationale",
                 "themeAlignmentScore": 75,
-                "themeAlignmentRationale": "Addresses 'Operational Excellence' theme directly",
+                "themeAlignmentRationale": "Rationale",
                 "roleAppropriatenessScore": 90,
-                "roleAppropriatenessRationale": "Appropriate scope for mid-level role"
+                "roleAppropriatenessRationale": "Rationale"
             }},
             "impactScore": 70,
             "alignedObjectives": ["F1", "P2"],
             "strategicTieBack": {{
-                "visionConnection": "How this specific goal connects to the organizational vision",
-                "missionSupport": "How this goal supports the stated mission",
-                "strategicThemes": ["which strategic themes this goal addresses"],
-                "objectiveMapping": "Explanation of why this maps to objectives F1, P2"
+                "visionConnection": "Connection",
+                "missionSupport": "Support",
+                "strategicThemes": [],
+                "objectiveMapping": "Mapping"
             }},
-            "alignmentRationale": "Detailed explanation referencing SPECIFIC strategic content - quote vision/mission/themes",
-            "impactRationale": "Assessment of potential strategic contribution given this employee's scope and influence",
-            "roleAppropriateness": "Assessment of whether this goal is appropriate for the employee's level",
-            "gaps": ["string"],
+            "alignmentRationale": "Detailed rationale",
+            "impactRationale": "Impact assessment",
+            "roleAppropriateness": "Role fit assessment",
+            "gaps": [],
             "smartAssessment": {{
                 "specific": true,
                 "measurable": true,
                 "achievable": true,
                 "relevant": true,
                 "timeBound": false,
-                "notes": "string"
+                "notes": ""
             }}
         }}
     ],
     "goalSetCoherence": {{
-        "internalConsistency": "string - do goals support or conflict with each other?",
-        "balancedCoverage": "string - are multiple strategic perspectives addressed?",
-        "weightDistributionAssessment": "string - if weights provided, are they well-distributed?",
-        "overallCoherenceNotes": "string - how well does this goal set work as a unified whole?"
+        "internalConsistency": "Assessment",
+        "balancedCoverage": "Assessment",
+        "weightDistributionAssessment": "Assessment",
+        "overallCoherenceNotes": "Notes"
     }},
     "strategicCoverage": {{
         "financial": {{ "covered": 2, "total": 3, "percentage": 67 }},
@@ -433,10 +342,10 @@ Return ONLY valid JSON matching this structure:
         "process": {{ "covered": 3, "total": 3, "percentage": 100 }},
         "learning": {{ "covered": 0, "total": 2, "percentage": 0 }}
     }},
-    "recommendations": ["string - specific recommendations referencing the actual strategic content"]
+    "recommendations": []
 }}"""
 
-        response = self.complete(prompt, system_prompt=system_prompt, max_tokens=8192)
+        response = self.complete(prompt, system_prompt=system_prompt, max_tokens=6144)
 
         # Parse JSON from response
         try:
