@@ -684,28 +684,28 @@ class MockClaudeClient:
         values_section_start = -1
 
         # Headers that indicate a values or culture section
+        # Be conservative - only match clear values/culture headers to avoid false positives
         values_headers = [
-            # Values-related headers
-            'values', 'core values', 'our values', 'people values', 'company values',
+            # Values-related headers (most reliable)
+            'core values', 'our values', 'people values', 'company values',
             'organizational values', 'corporate values', 'guiding values',
             # Culture-related headers
-            'culture', 'our culture', 'company culture', 'organizational culture',
+            'our culture', 'company culture', 'organizational culture',
             'cultural values', 'cultural pillars', 'culture pillars',
             # Beliefs and principles
-            'beliefs', 'our beliefs', 'core beliefs',
-            'principles', 'guiding principles', 'core principles',
-            # DNA-related headers (common in corporate culture statements)
-            'dna', 'our dna', 'company dna', 'corporate dna', 'organizational dna',
-            'cultural dna', 'leadership dna',
-            # "The [Company] Way" patterns
-            'way', 'our way', 'the way', 'company way',
-            'how we work', 'ways of working', 'how we operate',
-            # Behaviors and mindset
-            'behaviors', 'our behaviors', 'key behaviors', 'leadership behaviors',
-            'mindset', 'our mindset', 'winning mindset',
-            # Pillars (beyond culture pillars)
-            'pillars', 'our pillars', 'core pillars', 'strategic pillars'
+            'our beliefs', 'core beliefs',
+            'guiding principles', 'core principles',
+            # DNA-related headers (only specific forms)
+            'our dna', 'company dna', 'corporate dna', 'organizational dna',
+            'cultural dna',
+            # "The [Company] Way" patterns (only specific forms)
+            'our way', 'how we work', 'ways of working',
+            # Behaviors and mindset (only specific forms)
+            'our behaviors', 'key behaviors',
+            'our mindset', 'winning mindset'
         ]
+        # NOTE: Removed single-word headers like 'values', 'culture', 'dna', 'way', 'pillars'
+        # as they cause too many false positives
 
         # Add company-specific headers if company name was detected
         if company_name:
@@ -812,10 +812,17 @@ class MockClaudeClient:
                             # Functional areas (not values)
                             'management', 'marketing', 'finance', 'logistics', 'cargo',
                             'aviation', 'catering', 'food', 'travel', 'airline',
+                            # Geographic regions (not values)
+                            'emeaa', 'emea', 'apac', 'americas', 'asia', 'europe',
+                            'pacific', 'region', 'global', 'international', 'centralized',
+                            'examination', 'countries', 'territories',
                             # Other non-value terms
                             'strategy', 'strategic', 'objective', 'goal', 'target',
                             'initiative', 'project', 'program', 'plan',
-                            'performance', 'leadership', 'service excellence'
+                            'performance', 'leadership', 'service excellence',
+                            # E-commerce and technology terms
+                            'e-commerce', 'ecommerce', 'digital', 'technology', 'platform',
+                            'offerings', 'provider', 'best-in-class'
                         ]
                         excluded_end_terms = ['values', 'culture', 'services', 'solutions']
 
@@ -889,17 +896,23 @@ class MockClaudeClient:
 
         # Third fallback: Look for numbered or bulleted lists near values/culture headers
         if not values:
-            # Terms to exclude from values (business segments, services, etc.)
+            # Terms to exclude from values (business segments, services, geographic, etc.)
             fallback_excluded_terms = [
                 'services', 'service', 'gateway', 'solutions', 'operations',
                 'business', 'division', 'segment', 'management', 'logistics',
                 'cargo', 'aviation', 'catering', 'food', 'travel', 'airline',
-                'strategy', 'strategic', 'objective', 'goal', 'values', 'culture'
+                'strategy', 'strategic', 'objective', 'goal', 'values', 'culture',
+                # Geographic regions
+                'emeaa', 'emea', 'apac', 'americas', 'asia', 'europe', 'pacific',
+                'region', 'global', 'international', 'centralized', 'examination',
+                # E-commerce and technology
+                'e-commerce', 'ecommerce', 'digital', 'technology', 'platform',
+                'offerings', 'provider', 'best-in-class'
             ]
             for i, line in enumerate(lines):
                 line_lower = line.strip().lower()
-                # Extended list of culture-related keywords including DNA and Way
-                culture_keywords = ['value', 'culture', 'belief', 'principle', 'dna', 'way', 'behavior', 'mindset']
+                # Culture-related keywords - be more specific to avoid false positives
+                culture_keywords = ['our values', 'core values', 'people values', 'our culture', 'our beliefs', 'our principles']
                 if any(h in line_lower for h in culture_keywords):
                     # Scan next lines for bullet/numbered items
                     for j in range(i + 1, min(i + 15, len(lines))):
