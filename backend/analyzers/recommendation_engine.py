@@ -83,7 +83,18 @@ class GoalRecommendationEngine:
         Returns:
             Recommendations with projected improvements
         """
+        # Build goal text from goals array if extractedText not available
         document_text = goal_document.get('extractedText', '')
+        if not document_text:
+            # Reconstruct goal text from goals array
+            goals = goal_document.get('goals', [])
+            goal_lines = []
+            for i, goal in enumerate(goals, 1):
+                goal_text = goal.get('goalText', '') if isinstance(goal, dict) else str(goal)
+                if goal_text:
+                    goal_lines.append(f"Goal {i}: {goal_text}")
+            document_text = '\n'.join(goal_lines) if goal_lines else 'No goals available'
+
         current_score = goal_document.get('overallAlignmentScore', 50)
 
         if alignment_analysis is None:
@@ -92,8 +103,13 @@ class GoalRecommendationEngine:
                 'overallImpactScore': goal_document.get('overallImpactScore', 50),
                 'goals': goal_document.get('goals', []),
                 'strategicCoverage': goal_document.get('strategicCoverage', {}),
-                'recommendations': []
+                'recommendations': [],
+                'employeeContext': goal_document.get('employeeContext', {})
             }
+
+        # Ensure employeeContext is in alignment_analysis (critical for role-appropriate recommendations)
+        if 'employeeContext' not in alignment_analysis:
+            alignment_analysis['employeeContext'] = goal_document.get('employeeContext', {})
 
         # Generate recommendations using Claude
         raw_recommendations = self.client.generate_recommendations(

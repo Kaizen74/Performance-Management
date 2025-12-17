@@ -375,67 +375,92 @@ Return JSON:
         alignment_analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Generate improved goal recommendations.
+        Generate improved goal recommendations specific to the employee's role.
 
         Args:
             strategic_framework: Structured strategic framework
             current_goals: Current goal document text
-            alignment_analysis: Results from alignment analysis
+            alignment_analysis: Results from alignment analysis (includes employeeContext)
 
         Returns:
-            Recommendations for improved goals
+            Recommendations for improved goals with original goal references
         """
         import json
 
-        system_prompt = """You are an expert in performance management, OKRs, and strategic goal-setting.
-You generate improved performance goals that align with organizational strategy.
-Goals should be SMART and evidence-based. Always return valid JSON."""
+        # Extract employee context for role-appropriate recommendations
+        employee_context = alignment_analysis.get('employeeContext', {})
+        employee_name = employee_context.get('employeeName', 'Unknown')
+        job_title = employee_context.get('jobTitle', 'Not specified')
+        department = employee_context.get('department', 'Not specified')
+        seniority = employee_context.get('seniorityLevel', 'Not specified')
 
-        prompt = f"""Generate 5 revised performance goals that would significantly improve strategic alignment.
+        # Extract existing goals for reference
+        existing_goals = alignment_analysis.get('goals', [])
+        goals_summary = []
+        for i, goal in enumerate(existing_goals[:7], 1):
+            goal_text = goal.get('goalText', '')[:150]
+            alignment = goal.get('alignmentScore', 0)
+            gaps = goal.get('gaps', [])
+            goals_summary.append(f"G{i}: \"{goal_text}\" (Alignment:{alignment}, Gaps: {', '.join(gaps[:2]) if gaps else 'None'})")
 
-STRATEGIC FRAMEWORK:
-{json.dumps(strategic_framework, indent=2)}
+        # Compact strategic summary
+        org_purpose = strategic_framework.get('organizationalPurpose', {})
+        vision = org_purpose.get('vision', 'N/A')[:150]
+        mission = org_purpose.get('mission', 'N/A')[:150]
 
-CURRENT GOALS:
-{current_goals}
+        system_prompt = f"""You are an expert in performance management for the {department} department.
+You generate improved performance goals that are SPECIFIC to the employee's role and department.
+CRITICAL: Each recommendation MUST revise one of the employee's EXISTING goals - do NOT suggest unrelated goals.
+Goals for a {job_title} in {department} should be relevant to their actual work responsibilities.
+Always return valid JSON."""
 
-ALIGNMENT ANALYSIS:
-{json.dumps(alignment_analysis, indent=2)}
+        prompt = f"""Generate up to 5 revised goals for this SPECIFIC employee to improve strategic alignment.
 
-For each of 5 recommendations, provide:
-1. Revised Goal Statement (SMART format with OKR structure)
-2. Strategic Linkage: Which objectives this supports
-3. Predicted Alignment Score Improvement
-4. Evidence/Rationale: Why this goal structure is effective
-5. Implementation Considerations: Dependencies, risks, timeline
+EMPLOYEE (recommendations must be appropriate for this role):
+- Name: {employee_name}
+- Job Title: {job_title}
+- Department: {department}
+- Seniority: {seniority}
 
-CONSTRAINTS:
-- Goals must be achievable within typical performance cycle
-- Build on existing competencies shown in current goals
-- Consider team/organizational capacity
+EMPLOYEE'S CURRENT GOALS (each recommendation MUST revise one of these):
+{chr(10).join(goals_summary)}
 
-Return ONLY valid JSON matching this structure:
+STRATEGIC CONTEXT:
+- Vision: {vision}
+- Mission: {mission}
+- Current Alignment: {alignment_analysis.get('overallAlignmentScore', 0)}/100
+- Current Impact: {alignment_analysis.get('overallImpactScore', 0)}/100
+
+CRITICAL CONSTRAINTS:
+1. ONLY revise the employee's existing goals listed above
+2. Recommendations MUST be appropriate for {job_title} in {department}
+3. Do NOT suggest goals outside the employee's department scope
+4. Reference the original goal being revised in each recommendation
+
+Return JSON:
 {{
     "recommendations": [
         {{
             "recommendationId": "R1",
+            "originalGoalId": "G1",
+            "originalGoal": "Copy the exact original goal text here",
             "revisedGoal": {{
-                "objective": "string",
-                "keyResults": ["string"],
-                "timeline": "string",
-                "metrics": ["string"]
+                "objective": "Improved goal statement for {job_title}",
+                "keyResults": ["KR1", "KR2", "KR3"],
+                "timeline": "FY2025",
+                "metrics": ["Metric1", "Metric2"]
             }},
-            "strategicLinkages": ["F1", "C2", "P1"],
-            "predictedAlignmentGain": 15,
+            "strategicLinkages": ["F1", "C2"],
+            "predictedAlignmentGain": 8,
             "evidence": {{
-                "source": "string",
-                "finding": "string"
+                "source": "Gap analysis",
+                "finding": "Why this revision improves alignment"
             }},
-            "implementationNotes": "string"
+            "implementationNotes": "Guidance for {job_title} in {department}"
         }}
     ],
-    "projectedNewAlignmentScore": 88,
-    "projectedNewImpactScore": 82
+    "projectedNewAlignmentScore": 85,
+    "projectedNewImpactScore": 80
 }}"""
 
         response = self.complete(prompt, system_prompt=system_prompt, max_tokens=8192)
