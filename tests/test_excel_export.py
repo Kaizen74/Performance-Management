@@ -111,7 +111,25 @@ def generate_mock_analysis_results(count: int = 5):
             "recommendations": [
                 "Add goals addressing learning perspective",
                 "Strengthen sustainability linkage"
-            ]
+            ],
+            "coherenceIndex": {
+                "score": 65 + (i * 5) % 30,
+                "verdict": "Operationally Weak" if (65 + (i * 5) % 30) < 80 else "Highly Aligned",
+                "totalPoints": 175 + i * 10,
+                "maxPossiblePoints": 200,
+                "quadrantDistribution": {
+                    "Strategic Driver": 1 + (i % 2),
+                    "Busy Work Trap": 1 if i % 3 == 0 else 0,
+                    "Rogue Project": 1 if i % 4 == 0 else 0,
+                    "Distraction": 1 if i % 5 == 0 else 0,
+                },
+                "pillarCoverage": {
+                    "totalPillars": 4,
+                    "coveredPillars": ["Process", "Learning"],
+                    "uncoveredPillars": ["Financial", "Customer"],
+                    "coveragePercentage": 50,
+                }
+            }
         })
 
     return results
@@ -506,6 +524,75 @@ class TestPDFExportEngine:
             assert os.path.exists(result_path)
             # File with recommendations should be larger
             assert os.path.getsize(result_path) > 2000
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_portfolio_strategic_analysis_section(self):
+        """Test PDF export includes portfolio strategic analysis with coherence data."""
+        results = generate_mock_analysis_results(5)
+        engine = PDFExportEngine(MOCK_FRAMEWORK, results)
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result_path = engine.generate_report(output_path)
+            assert os.path.exists(result_path)
+            # File with portfolio strategic analysis should be larger than basic PDF
+            # (more pages with coherence data)
+            assert os.path.getsize(result_path) > 5000
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_portfolio_strategic_analysis_with_varied_quadrants(self):
+        """Test portfolio strategic analysis handles various quadrant distributions."""
+        results = generate_mock_analysis_results(5)
+        # Modify coherence data for varied distribution
+        results[0]['coherenceIndex']['quadrantDistribution'] = {
+            'Strategic Driver': 3,
+            'Busy Work Trap': 1,
+            'Rogue Project': 0,
+            'Distraction': 0
+        }
+        results[1]['coherenceIndex']['quadrantDistribution'] = {
+            'Strategic Driver': 1,
+            'Busy Work Trap': 2,
+            'Rogue Project': 1,
+            'Distraction': 1
+        }
+        engine = PDFExportEngine(MOCK_FRAMEWORK, results)
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result_path = engine.generate_report(output_path)
+            assert os.path.exists(result_path)
+            assert os.path.getsize(result_path) > 5000
+        finally:
+            if os.path.exists(output_path):
+                os.unlink(output_path)
+
+    def test_portfolio_strategic_analysis_skipped_without_coherence(self):
+        """Test portfolio strategic analysis is skipped when no coherence data exists."""
+        results = generate_mock_analysis_results(3)
+        # Remove coherence data from all results
+        for result in results:
+            if 'coherenceIndex' in result:
+                del result['coherenceIndex']
+
+        engine = PDFExportEngine(MOCK_FRAMEWORK, results)
+
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+            output_path = tmp.name
+
+        try:
+            result_path = engine.generate_report(output_path)
+            assert os.path.exists(result_path)
+            # Should still generate successfully, just without the section
+            assert os.path.getsize(result_path) > 1000
         finally:
             if os.path.exists(output_path):
                 os.unlink(output_path)
