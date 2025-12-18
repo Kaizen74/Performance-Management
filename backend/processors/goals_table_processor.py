@@ -39,7 +39,10 @@ class GoalsTableProcessor:
         'subject name',
         'employee name', 'full name', 'worker name',
         'employee_name', 'emp_name', 'worker_name',
-        'employee', 'name', 'worker', 'associate'  # Generic patterns last
+        'staff name', 'staff_name', 'staffname',  # Common alternative names
+        'personnel name', 'person name',
+        'employee', 'name', 'worker', 'associate',  # Generic patterns
+        'staff', 'personnel', 'person', 'member'  # Very generic - last resort
     ]
 
     EMPLOYEE_ID_PATTERNS = [
