@@ -408,15 +408,15 @@ class MockClaudeClient:
         # Order matters - check more specific patterns first
         specific_patterns = [
             (r'(OD\s*&?\s*Talent\s*Management|ODTM)', 'OD & Talent Management'),
-            (r'(Talent\s*Management)\s+(?:team|department|strategy|goals)', 'Talent Management'),
+            (r'(Talent\s*Management)\s+(?:team|department|strateg(?:y|ic)|goals)', 'Talent Management'),
             (r'(Organisation(?:al)?\s*Development|Organizational\s*Development)', 'Organizational Development'),
-            (r'(Human\s*Resources?|HR)\s+(?:Strategic|Strategy|Plan|Goals|Department)', 'Human Resources'),
-            (r'(People\s*(?:&\s*)?(?:Culture|Operations))\s+(?:team|strategy)', 'People & Culture'),
-            (r'(Finance)\s+(?:Department|Team|Strategy|Goals)', 'Finance'),
-            (r'(IT|Information\s*Technology)\s+(?:Department|Team|Strategy|Goals)', 'IT'),
-            (r'(Marketing)\s+(?:Department|Team|Strategy|Goals)', 'Marketing'),
-            (r'(Sales)\s+(?:Department|Team|Strategy|Goals)', 'Sales'),
-            (r'(Operations)\s+(?:Department|Team|Strategy|Goals)', 'Operations'),
+            (r'(Human\s*Resources?|HR)\s+(?:Strateg(?:y|ic)|Plan|Goals|Department)', 'Human Resources'),
+            (r'(People\s*(?:&\s*)?(?:Culture|Operations))\s+(?:team|strateg(?:y|ic))', 'People & Culture'),
+            (r'(Finance)\s+(?:Department|Team|Strateg(?:y|ic)|Goals)', 'Finance'),
+            (r'(IT|Information\s*Technology)\s+(?:Department|Team|Strateg(?:y|ic)|Goals)', 'IT'),
+            (r'(Marketing)\s+(?:Department|Team|Strateg(?:y|ic)|Goals)', 'Marketing'),
+            (r'(Sales)\s+(?:Department|Team|Strateg(?:y|ic)|Goals)', 'Sales'),
+            (r'(Operations)\s+(?:Department|Team|Strateg(?:y|ic)|Goals)', 'Operations'),
         ]
 
         for pattern, entity_name in specific_patterns:
