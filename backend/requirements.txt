@@ -1,6 +1,7 @@
 # Document Processing
 pdfplumber>=0.10.0
 python-docx>=1.1.0
+python-pptx>=0.6.21
 pandas>=2.1.0
 openpyxl>=3.1.0
 markitdown>=0.0.1
