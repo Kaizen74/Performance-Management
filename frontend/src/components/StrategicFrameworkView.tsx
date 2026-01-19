@@ -34,12 +34,34 @@ export function StrategicFrameworkView() {
     { key: 'learningGrowth', label: 'Learning & Growth', icon: '📈', color: 'orange' },
   ];
 
+  // Determine if this is a team/department strategy
+  const isTeamStrategy = framework.strategyScope === 'team' || framework.strategyScope === 'department';
+  const scopeLabel = framework.strategyScope === 'team' ? 'Team' :
+                     framework.strategyScope === 'department' ? 'Department' : 'Organization';
+
   return (
     <div className="space-y-6" data-testid="strategic-framework">
+      {/* Scope Banner for Team/Department Strategies */}
+      {isTeamStrategy && framework.scopeEntity && (
+        <div className="bg-indigo-50 rounded-lg border border-indigo-200 p-4">
+          <div className="flex items-center gap-2">
+            <span className="text-indigo-600 text-lg">🏢</span>
+            <div>
+              <p className="text-sm font-medium text-indigo-800">
+                {scopeLabel} Strategy: {framework.scopeEntity}
+              </p>
+              <p className="text-xs text-indigo-600">
+                This strategic framework is specific to the {framework.scopeEntity} {scopeLabel.toLowerCase()}, not the entire organization.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Organization Purpose */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
         <h2 className="text-xl font-semibold text-slate-900 mb-4">
-          Organizational Purpose
+          {isTeamStrategy ? `${framework.scopeEntity} Purpose` : 'Organizational Purpose'}
         </h2>
 
         <div className="space-y-4">

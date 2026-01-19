@@ -26,6 +26,10 @@ export interface StrategicObjective {
 }
 
 export interface StrategicFramework {
+  // Strategy scope - indicates if this is organization-wide or team/department specific
+  strategyScope?: 'organization' | 'department' | 'team';
+  // Entity name for team/department strategies (null for organization-wide)
+  scopeEntity?: string | null;
   organizationalPurpose: {
     vision: string;
     mission: string;

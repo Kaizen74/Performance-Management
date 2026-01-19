@@ -391,43 +391,83 @@ class MockClaudeClient:
 
         text_lower = documents_text.lower()
 
-        # Common team/department indicators
-        team_patterns = [
-            r'([A-Za-z&\s]+(?:team|department|division|function|unit))\s+(?:strategy|strategic|goals|objectives)',
-            r'(?:strategy|strategic|goals|objectives)\s+(?:for|of)\s+([A-Za-z&\s]+)',
-            r'([A-Z]{2,6})\s+(?:strategic\s+)?goals',
-            r'(OD\s*&?\s*Talent\s*Management|ODTM|Talent\s*Management|Organisation(?:al)?\s*Development)',
-            r'(Human\s*Resources?|People\s*(?:&\s*)?(?:Culture|Operations))',
+        # Check for company-wide indicators FIRST
+        company_indicators = ['corporate strategy', 'company strategy', 'enterprise strategy',
+                            'our vision', 'our mission', 'company-wide', 'organization-wide']
+        has_company_context = any(ind in text_lower for ind in company_indicators)
+
+        # If explicit company context, return organization scope
+        if has_company_context:
+            return {
+                'is_team_specific': False,
+                'entity_name': None,
+                'scope': 'organization'
+            }
+
+        # Check for specific department/team patterns
+        # Order matters - check more specific patterns first
+        specific_patterns = [
+            (r'(OD\s*&?\s*Talent\s*Management|ODTM)', 'OD & Talent Management'),
+            (r'(Talent\s*Management)\s+(?:team|department|strategy|goals)', 'Talent Management'),
+            (r'(Organisation(?:al)?\s*Development|Organizational\s*Development)', 'Organizational Development'),
+            (r'(Human\s*Resources?|HR)\s+(?:Strategic|Strategy|Plan|Goals|Department)', 'Human Resources'),
+            (r'(People\s*(?:&\s*)?(?:Culture|Operations))\s+(?:team|strategy)', 'People & Culture'),
+            (r'(Finance)\s+(?:Department|Team|Strategy|Goals)', 'Finance'),
+            (r'(IT|Information\s*Technology)\s+(?:Department|Team|Strategy|Goals)', 'IT'),
+            (r'(Marketing)\s+(?:Department|Team|Strategy|Goals)', 'Marketing'),
+            (r'(Sales)\s+(?:Department|Team|Strategy|Goals)', 'Sales'),
+            (r'(Operations)\s+(?:Department|Team|Strategy|Goals)', 'Operations'),
         ]
 
-        for pattern in team_patterns:
+        for pattern, entity_name in specific_patterns:
+            if re.search(pattern, documents_text, re.IGNORECASE):
+                return {
+                    'is_team_specific': True,
+                    'entity_name': entity_name,
+                    'scope': 'department'
+                }
+
+        # Generic team/department patterns
+        generic_patterns = [
+            r'([A-Za-z&]+(?:\s+[A-Za-z&]+)?)\s+(?:team|department|division)\s+(?:strategy|strategic|goals)',
+            r'([A-Z]{2,6})\s+Strategic\s+Goals',
+        ]
+
+        for pattern in generic_patterns:
             matches = re.findall(pattern, documents_text, re.IGNORECASE)
             if matches:
                 entity_name = matches[0].strip() if isinstance(matches[0], str) else matches[0]
                 entity_name = re.sub(r'\s+', ' ', entity_name).strip()
-                if len(entity_name) > 2:
+                # Filter out common words that aren't department names
+                skip_words = ['the', 'our', 'and', 'for', 'strategic', 'strategy']
+                if len(entity_name) > 2 and entity_name.lower() not in skip_words:
                     return {
                         'is_team_specific': True,
                         'entity_name': entity_name,
-                        'scope': 'team' if 'team' in entity_name.lower() else 'department'
+                        'scope': 'department'
                     }
 
-        # Check for functional keywords
+        # Check for functional keywords without company context
         functional_keywords = [
             'talent management', 'talent development', 'talent acquisition',
             'organisational development', 'organizational development',
-            'succession planning', 'employee engagement'
+            'succession planning', 'employee engagement', 'workforce planning',
+            'learning and development', 'l&d strategy'
         ]
         keyword_matches = sum(1 for kw in functional_keywords if kw in text_lower)
 
-        company_indicators = ['corporate strategy', 'company strategy', 'our vision', 'our mission']
-        has_company_context = any(ind in text_lower for ind in company_indicators)
-
-        if keyword_matches >= 2 and not has_company_context:
+        if keyword_matches >= 2:
+            # Infer department from keywords
             if any(kw in text_lower for kw in ['talent', 'odtm', 'od ', 'organisational development']):
                 return {
                     'is_team_specific': True,
                     'entity_name': 'OD & Talent Management',
+                    'scope': 'department'
+                }
+            elif any(kw in text_lower for kw in ['hr ', 'human resource', 'people strategy']):
+                return {
+                    'is_team_specific': True,
+                    'entity_name': 'Human Resources',
                     'scope': 'department'
                 }
 
