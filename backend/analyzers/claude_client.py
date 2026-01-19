@@ -112,6 +112,88 @@ class ClaudeClient:
                     continue
                 raise RuntimeError(f"Claude API error after {self.MAX_RETRIES} retries: {str(e)}")
 
+    def _detect_strategy_scope(self, documents_text: str) -> Dict[str, Any]:
+        """
+        Detect if the strategy document is team/department-specific or organization-wide.
+
+        Args:
+            documents_text: Combined text from strategy documents
+
+        Returns:
+            Dict with is_team_specific (bool) and entity_name (str or None)
+        """
+        import re
+
+        text_lower = documents_text.lower()
+
+        # Common team/department indicators
+        team_patterns = [
+            # Explicit team/department strategy mentions
+            r'([A-Za-z&\s]+(?:team|department|division|function|unit))\s+(?:strategy|strategic|goals|objectives)',
+            r'(?:strategy|strategic|goals|objectives)\s+(?:for|of)\s+([A-Za-z&\s]+(?:team|department|division|function|unit))',
+            # Department abbreviations with strategic context
+            r'([A-Z]{2,6})\s+(?:strategic\s+)?goals',
+            r'([A-Z]{2,6})\s+strategy',
+            # Functional area strategies
+            r'((?:HR|IT|Finance|Marketing|Sales|Operations|R&D|Engineering|Legal|OD|ODTM|L&D|Talent|People)[^a-z]*)\s*(?:strategic|strategy|goals)',
+            # Team name patterns
+            r'(OD\s*&?\s*Talent\s*Management|Talent\s*Management|Organisation(?:al)?\s*Development)',
+            r'(Human\s*Resources?|People\s*(?:&\s*)?(?:Culture|Operations))',
+        ]
+
+        # Look for team/department indicators
+        for pattern in team_patterns:
+            matches = re.findall(pattern, documents_text, re.IGNORECASE)
+            if matches:
+                entity_name = matches[0].strip() if isinstance(matches[0], str) else matches[0]
+                # Clean up the entity name
+                entity_name = re.sub(r'\s+', ' ', entity_name).strip()
+                if len(entity_name) > 2:
+                    return {
+                        'is_team_specific': True,
+                        'entity_name': entity_name,
+                        'scope': 'team' if 'team' in entity_name.lower() else 'department'
+                    }
+
+        # Check for functional keywords without explicit "company" or "corporate" context
+        functional_keywords = [
+            'talent management', 'talent development', 'talent acquisition',
+            'organisational development', 'organizational development',
+            'learning and development', 'l&d', 'employee engagement',
+            'succession planning', 'performance management',
+            'hr strategy', 'people strategy', 'workforce planning'
+        ]
+
+        # Check if document is heavily focused on a specific function
+        keyword_matches = sum(1 for kw in functional_keywords if kw in text_lower)
+
+        # If many functional keywords and no company-wide indicators, likely team-specific
+        company_indicators = ['corporate strategy', 'company strategy', 'enterprise strategy',
+                            'our vision', 'our mission', 'company-wide', 'organization-wide',
+                            'annual report', 'investor', 'shareholder']
+        has_company_context = any(ind in text_lower for ind in company_indicators)
+
+        if keyword_matches >= 3 and not has_company_context:
+            # Try to identify the function
+            if any(kw in text_lower for kw in ['talent', 'od ', 'odtm', 'organisational development', 'organizational development']):
+                return {
+                    'is_team_specific': True,
+                    'entity_name': 'OD & Talent Management',
+                    'scope': 'department'
+                }
+            elif any(kw in text_lower for kw in ['hr ', 'human resource', 'people ']):
+                return {
+                    'is_team_specific': True,
+                    'entity_name': 'Human Resources',
+                    'scope': 'department'
+                }
+
+        return {
+            'is_team_specific': False,
+            'entity_name': None,
+            'scope': 'organization'
+        }
+
     def analyze_strategy(
         self,
         documents_text: str,
@@ -127,32 +209,56 @@ class ClaudeClient:
         Returns:
             Parsed JSON response with strategic framework
         """
+        # Detect if this is a team/department-specific strategy
+        strategy_scope = self._detect_strategy_scope(documents_text)
+
         system_prompt = """You are an expert in strategic planning frameworks including
-Balanced Scorecard, Strategy Maps, and OKRs. You analyze organizational strategy documents
-and extract structured strategic frameworks. Always return valid JSON."""
+Balanced Scorecard, Strategy Maps, and OKRs. You analyze organizational and team strategy documents
+and extract structured strategic frameworks. Always return valid JSON.
 
-        prompt = f"""Analyze the following organizational strategy documents and extract a coherent strategic framework.
+CRITICAL: If the document is a TEAM or DEPARTMENT strategy (not company-wide), you MUST:
+1. Set strategyScope to "team" or "department"
+2. Include the team/department name in scopeEntity
+3. For vision/mission, extract the TEAM's purpose, NOT invent a company-wide vision
+4. If no explicit team vision exists, state "Team purpose derived from strategic goals" and summarize their focus"""
 
+        scope_context = ""
+        if strategy_scope['is_team_specific']:
+            scope_context = f"""
+IMPORTANT CONTEXT: This appears to be a TEAM/DEPARTMENT strategy document for "{strategy_scope['entity_name']}".
+- DO NOT invent or assume company-wide vision/mission statements
+- Extract the team's strategic goals and objectives as stated
+- The "vision" should reflect this team's purpose, not the parent organization
+- If no explicit vision/mission is stated, derive it from the team's stated goals
+"""
+
+        prompt = f"""Analyze the following strategy documents and extract a coherent strategic framework.
+{scope_context}
 DOCUMENTS:
 {documents_text}
 
 OUTPUT REQUIREMENTS:
-1. Identify the core vision, mission, and organizational values
-2. Extract strategic objectives and categorize into Balanced Scorecard perspectives:
-   - Financial: Revenue, profitability, shareholder value objectives
-   - Customer: Value proposition, customer satisfaction, market position
-   - Internal Process: Operational excellence, innovation, regulatory compliance
-   - Learning & Growth: Capabilities, culture, technology, human capital
-3. Identify strategic themes that connect objectives across perspectives
-4. Derive Key Performance Requirements that leadership must achieve
-
-Apply the "Golden Thread" principle - ensure vertical alignment from vision to specific performance requirements.
+1. FIRST determine the scope: Is this a company-wide strategy OR a team/department strategy?
+2. If TEAM/DEPARTMENT strategy:
+   - Set strategyScope to "team" or "department"
+   - Set scopeEntity to the team/department name (e.g., "OD & Talent Management", "HR", "Finance")
+   - For vision: State the team's purpose based on their goals (do NOT invent company vision)
+   - For mission: Describe what this team does based on the document
+3. Extract strategic objectives into Balanced Scorecard perspectives:
+   - Financial: Budget, cost efficiency, ROI objectives (if applicable to this team)
+   - Customer: Internal stakeholders, service delivery objectives
+   - Internal Process: Process improvement, delivery, operational objectives
+   - Learning & Growth: Capabilities, development, engagement objectives
+4. Identify strategic themes that connect objectives
+5. Derive Key Performance Requirements
 
 Return ONLY valid JSON matching this structure:
 {{
+    "strategyScope": "organization|department|team",
+    "scopeEntity": "string - name of team/department if not organization-wide, otherwise null",
     "organizationalPurpose": {{
-        "vision": "string",
-        "mission": "string",
+        "vision": "string - team/dept purpose if scoped, or org vision if company-wide",
+        "mission": "string - what this entity does/delivers",
         "values": ["string"]
     }},
     "strategicPerspectives": {{

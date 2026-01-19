@@ -349,6 +349,9 @@ class MockClaudeClient:
         Extract strategic framework from actual document content.
         Parses the documents to find vision, mission, values, and strategic elements.
         """
+        # Detect if this is a team/department-specific strategy
+        scope_info = self._detect_strategy_scope(documents_text)
+
         # Extract actual content from documents
         vision = self._extract_vision(documents_text)
         mission = self._extract_mission(documents_text)
@@ -357,7 +360,17 @@ class MockClaudeClient:
         objectives = self._extract_objectives(documents_text, strategic_themes)
         kprs = self._extract_kprs(documents_text, objectives)
 
-        return {
+        # If team-specific and no explicit vision/mission found, generate from context
+        if scope_info['is_team_specific']:
+            entity_name = scope_info['entity_name']
+            if 'not explicitly stated' in vision.lower() or len(vision) < 30:
+                vision = self._generate_team_vision(documents_text, entity_name, objectives)
+            if 'not explicitly stated' in mission.lower() or len(mission) < 30:
+                mission = self._generate_team_mission(documents_text, entity_name, objectives)
+
+        result = {
+            "strategyScope": scope_info['scope'],
+            "scopeEntity": scope_info['entity_name'],
             "organizationalPurpose": {
                 "vision": vision,
                 "mission": mission,
@@ -367,6 +380,100 @@ class MockClaudeClient:
             "strategicThemes": strategic_themes,
             "keyPerformanceRequirements": kprs
         }
+
+        return result
+
+    def _detect_strategy_scope(self, documents_text: str) -> Dict[str, Any]:
+        """
+        Detect if the strategy document is team/department-specific or organization-wide.
+        """
+        import re
+
+        text_lower = documents_text.lower()
+
+        # Common team/department indicators
+        team_patterns = [
+            r'([A-Za-z&\s]+(?:team|department|division|function|unit))\s+(?:strategy|strategic|goals|objectives)',
+            r'(?:strategy|strategic|goals|objectives)\s+(?:for|of)\s+([A-Za-z&\s]+)',
+            r'([A-Z]{2,6})\s+(?:strategic\s+)?goals',
+            r'(OD\s*&?\s*Talent\s*Management|ODTM|Talent\s*Management|Organisation(?:al)?\s*Development)',
+            r'(Human\s*Resources?|People\s*(?:&\s*)?(?:Culture|Operations))',
+        ]
+
+        for pattern in team_patterns:
+            matches = re.findall(pattern, documents_text, re.IGNORECASE)
+            if matches:
+                entity_name = matches[0].strip() if isinstance(matches[0], str) else matches[0]
+                entity_name = re.sub(r'\s+', ' ', entity_name).strip()
+                if len(entity_name) > 2:
+                    return {
+                        'is_team_specific': True,
+                        'entity_name': entity_name,
+                        'scope': 'team' if 'team' in entity_name.lower() else 'department'
+                    }
+
+        # Check for functional keywords
+        functional_keywords = [
+            'talent management', 'talent development', 'talent acquisition',
+            'organisational development', 'organizational development',
+            'succession planning', 'employee engagement'
+        ]
+        keyword_matches = sum(1 for kw in functional_keywords if kw in text_lower)
+
+        company_indicators = ['corporate strategy', 'company strategy', 'our vision', 'our mission']
+        has_company_context = any(ind in text_lower for ind in company_indicators)
+
+        if keyword_matches >= 2 and not has_company_context:
+            if any(kw in text_lower for kw in ['talent', 'odtm', 'od ', 'organisational development']):
+                return {
+                    'is_team_specific': True,
+                    'entity_name': 'OD & Talent Management',
+                    'scope': 'department'
+                }
+
+        return {
+            'is_team_specific': False,
+            'entity_name': None,
+            'scope': 'organization'
+        }
+
+    def _generate_team_vision(self, text: str, entity_name: str, objectives: Dict) -> str:
+        """Generate a team vision statement based on their strategic goals."""
+        # Extract key focus areas from objectives
+        focus_areas = []
+        for perspective in ['learningGrowth', 'internalProcess', 'customer', 'financial']:
+            objs = objectives.get(perspective, {}).get('objectives', [])
+            for obj in objs[:2]:
+                focus_areas.append(obj.get('objective', ''))
+
+        if focus_areas:
+            areas_text = ', '.join(focus_areas[:3])
+            return f"To enable organizational excellence through {entity_name}'s strategic priorities: {areas_text}"
+        return f"To be a strategic partner driving organizational capability and performance through {entity_name}"
+
+    def _generate_team_mission(self, text: str, entity_name: str, objectives: Dict) -> str:
+        """Generate a team mission statement based on their strategic goals."""
+        text_lower = text.lower()
+
+        # Extract key activities from the document
+        activities = []
+        if 'talent' in text_lower:
+            activities.append('talent development and management')
+        if 'succession' in text_lower:
+            activities.append('succession planning')
+        if 'engagement' in text_lower:
+            activities.append('employee engagement')
+        if 'culture' in text_lower or 'values' in text_lower:
+            activities.append('culture and values embedding')
+        if 'coaching' in text_lower:
+            activities.append('executive coaching')
+        if 'development' in text_lower and 'organisation' in text_lower:
+            activities.append('organizational development')
+
+        if activities:
+            activities_text = ', '.join(activities[:4])
+            return f"To deliver {activities_text} that enables the organization to achieve its strategic objectives"
+        return f"To provide strategic {entity_name} services that build organizational capability and drive performance"
 
     def _extract_vision(self, text: str) -> str:
         """Extract vision statement from document text.
