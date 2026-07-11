@@ -105,21 +105,21 @@ class ExcelExportEngine:
 
         ws['A5'] = "Average Alignment Score:"
         if valid_results:
-            ws['B5'] = f"=AVERAGE('Employee Details'!E2:E{len(valid_results)+1})"
+            ws['B5'] = f"=AVERAGE('Employee Details'!E2:E{len(self.results)+1})"
         else:
             ws['B5'] = 0
         ws['A5'].font = Font(bold=True)
 
         ws['A6'] = "Average Impact Score:"
         if valid_results:
-            ws['B6'] = f"=AVERAGE('Employee Details'!F2:F{len(valid_results)+1})"
+            ws['B6'] = f"=AVERAGE('Employee Details'!F2:F{len(self.results)+1})"
         else:
             ws['B6'] = 0
         ws['A6'].font = Font(bold=True)
 
         ws['A7'] = "Average Coherence Score:"
         if valid_results:
-            ws['B7'] = f"=AVERAGE('Employee Details'!G2:G{len(valid_results)+1})"
+            ws['B7'] = f"=AVERAGE('Employee Details'!G2:G{len(self.results)+1})"
         else:
             ws['B7'] = 0
         ws['A7'].font = Font(bold=True)
@@ -144,7 +144,7 @@ class ExcelExportEngine:
         # Calculate seniority stats
         seniority_stats = self._calculate_seniority_stats()
         for row_idx, (level, stats) in enumerate(seniority_stats.items(), 12):
-            ws.cell(row=row_idx, column=1, value=level.capitalize()).border = self._thin_border
+            ws.cell(row=row_idx, column=1, value=level.title()).border = self._thin_border
             ws.cell(row=row_idx, column=2, value=stats['count']).border = self._thin_border
             ws.cell(row=row_idx, column=3, value=stats['avg_alignment']).border = self._thin_border
             ws.cell(row=row_idx, column=4, value=stats['avg_impact']).border = self._thin_border
@@ -265,15 +265,17 @@ class ExcelExportEngine:
             # Scores
             alignment = result.get('overallAlignmentScore', 0)
             impact = result.get('overallImpactScore', 0)
-            coherence = result.get('coherenceAssessment', {}).get('overallCoherence', 0)
-            if not coherence and isinstance(coherence, (int, float)):
-                coherence = 0
+            coherence = result.get('overallCoherenceScore', 0)
+            if not coherence:
+                coherence = result.get('coherenceIndex', {}).get('score', 0)
 
-            # Handle scoring breakdown if present
-            scoring = result.get('scoringBreakdown', {})
-            role_appropriateness = scoring.get('roleAppropriateness', {}).get('raw', 0)
-            if not role_appropriateness:
-                role_appropriateness = 0
+            # Role appropriateness: average of per-goal breakdown scores
+            role_scores = [
+                g.get('alignmentScoreBreakdown', {}).get('roleAppropriatenessScore', 0)
+                for g in result.get('goals', [])
+            ]
+            role_scores = [s for s in role_scores if s]
+            role_appropriateness = round(sum(role_scores) / len(role_scores), 1) if role_scores else 0
 
             ws.cell(row=row_idx, column=5, value=alignment)
             ws.cell(row=row_idx, column=6, value=impact)
@@ -565,12 +567,13 @@ class ExcelExportEngine:
     def _calculate_seniority_stats(self) -> Dict[str, Dict[str, Any]]:
         """Calculate statistics by seniority level."""
         seniority_data = {}
-        levels = ['executive', 'senior', 'mid', 'junior']
+        # Levels emitted by GoalsTableProcessor._infer_seniority
+        levels = ['senior management', 'team leader', 'individual contributor']
 
         for level in levels:
             level_results = [
                 r for r in self.results
-                if (r.get('employeeContext', {}) or r.get('employeeMetadata', {})).get('seniorityLevel', '').lower() == level
+                if ((r.get('employeeContext', {}) or r.get('employeeMetadata', {})).get('seniorityLevel') or '').lower() == level
                 and 'error' not in r
             ]
 
@@ -578,7 +581,7 @@ class ExcelExportEngine:
                 avg_alignment = sum(r.get('overallAlignmentScore', 0) for r in level_results) / len(level_results)
                 avg_impact = sum(r.get('overallImpactScore', 0) for r in level_results) / len(level_results)
                 avg_coherence = sum(
-                    r.get('coherenceAssessment', {}).get('overallCoherence', 0)
+                    r.get('overallCoherenceScore', 0) or r.get('coherenceIndex', {}).get('score', 0)
                     for r in level_results
                 ) / len(level_results)
                 avg_composite = (avg_alignment * 0.6) + (avg_impact * 0.4)

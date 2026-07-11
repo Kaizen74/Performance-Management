@@ -10,6 +10,7 @@ from typing import List, Optional
 from fastapi import APIRouter, File, UploadFile, HTTPException, Body
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from processors import DocumentProcessor, GoalsTableProcessor
 from analyzers import (
@@ -25,6 +26,15 @@ from exports import ExcelExportEngine, PDFExportEngine
 
 
 router = APIRouter()
+
+
+def _remove_file(path: str) -> None:
+    """Delete a temp export file once the response has been sent."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
 
 # USE_MOCK controls behavior when NO API key is provided
 # When an API key IS provided, always use the real Claude client
@@ -193,18 +203,22 @@ async def upload_document(
             tmp.write(content)
             tmp_path = tmp.name
 
-        # Process document
-        processor = DocumentProcessor()
-        result = processor.extract(tmp_path, document_type=document_type)
+        try:
+            # Process document
+            processor = DocumentProcessor()
+            result = processor.extract(tmp_path, document_type=document_type)
+        finally:
+            # Clean up temp file even when extraction fails
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
         # Update filename
         result['fileName'] = file.filename
 
         # Store in memory
         document_store[result['documentId']] = result
-
-        # Clean up temp file
-        os.unlink(tmp_path)
 
         return {
             "documentId": result['documentId'],
@@ -501,7 +515,7 @@ async def export_excel(request: Optional[ExportRequest] = None):
             path=output_path,
             filename="strategic_goal_alignment_analysis.xlsx",
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            background=None  # Don't delete file immediately
+            background=BackgroundTask(_remove_file, output_path)  # Delete after response is sent
         )
 
     except Exception as e:
@@ -543,7 +557,7 @@ async def export_pdf(request: Optional[ExportRequest] = None):
             path=output_path,
             filename="strategic_goal_alignment_report.pdf",
             media_type="application/pdf",
-            background=None
+            background=BackgroundTask(_remove_file, output_path)  # Delete after response is sent
         )
 
     except Exception as e:
