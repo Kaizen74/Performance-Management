@@ -1019,7 +1019,7 @@ class MockClaudeClient:
         perspectives = {
             "financial": {"objectives": [], "keywords": ['revenue', 'profit', 'cost', 'margin', 'growth', 'roi', 'shareholder', 'ebitda', 'financial', 'returns']},
             "customer": {"objectives": [], "keywords": ['customer', 'client', 'satisfaction', 'nps', 'market', 'loyalty', 'service', 'network', 'hub', 'offering']},
-            "internalProcess": {"objectives": [], "keywords": ['process', 'operational', 'efficiency', 'quality', 'delivery', 'productivity', 'capability', 'system']},
+            "internalProcess": {"objectives": [], "keywords": ['process', 'operational', 'efficiency', 'quality', 'delivery', 'productivity', 'capability', 'system', 'digital', 'transformation', 'optimization', 'optimisation', 'automation', 'innovation', 'sustainability', 'carbon']},
             "learningGrowth": {"objectives": [], "keywords": ['employee', 'training', 'skill', 'talent', 'culture', 'capability', 'engagement', 'learning', 'people', 'workforce']}
         }
 
@@ -1038,8 +1038,11 @@ class MockClaudeClient:
 
         # Extract objectives from complete lines that start with action verbs
         for line in lines:
-            # Clean bullet points and numbering at start
-            line_clean = re.sub(r'^[\s\-•*\d.○◯●►▪→A-C\)\]]+', '', line).strip()
+            # Clean bullet symbols, then list markers like "1." / "A)" —
+            # stripping in two steps so leading capitals of real words
+            # (Achieve, Build, Create) are never consumed
+            line_clean = re.sub(r'^[\s\-•*○◯●►▪→\)\]]+', '', line)
+            line_clean = re.sub(r'^(?:\d+|[A-Za-z])[\.\)]\s+', '', line_clean).strip()
 
             # Skip short lines or metadata
             if len(line_clean) < 25:
@@ -1051,10 +1054,28 @@ class MockClaudeClient:
             line_lower = line_clean.lower()
             starts_with_action = any(line_lower.startswith(action) for action in action_starts)
 
+            is_priority_item = False
+            if not starts_with_action:
+                # Common priority format: "Title - action description" or
+                # "Title - measurable target" (e.g. "Customer Excellence -
+                # NPS > 70"); these are terse by design, so they get a
+                # lighter coherence check below
+                parts = re.split(r'\s+[-–—:]\s+', line_clean, maxsplit=1)
+                if len(parts) == 2:
+                    desc_lower = parts[1].lower()
+                    has_action = any(desc_lower.startswith(action) for action in action_starts)
+                    has_metric = bool(re.search(r'\d', parts[1]))
+                    if has_action or has_metric:
+                        starts_with_action = True
+                        is_priority_item = True
+
             if starts_with_action:
                 # Clean and validate
                 cleaned = self._clean_objective_text(line_clean)
-                if self._is_coherent_text(cleaned):
+                is_valid = self._is_coherent_text(cleaned) or (
+                    is_priority_item and 20 <= len(cleaned) <= 200
+                )
+                if is_valid:
                     # Avoid duplicates
                     if cleaned.lower() not in [o.lower() for o in found_objectives]:
                         found_objectives.append(cleaned)
@@ -1206,6 +1227,38 @@ class MockClaudeClient:
                 "linkedObjectiveIds": linked_objs[:3] if linked_objs else []
             })
             kpr_id += 1
+
+        # Derive KPRs from measurable objectives when the document lacks
+        # explicit requirement statements — a strategic priority with a
+        # quantified target is itself a key performance requirement
+        if len(kprs) < 4:
+            perspective_map = {
+                'financial': 'financial',
+                'customer': 'customer',
+                'internalProcess': 'process',
+                'learningGrowth': 'learning'
+            }
+            existing_reqs = {k['requirement'].lower() for k in kprs}
+            for p_name, p_data in objectives.items():
+                for obj in p_data.get('objectives', []):
+                    if len(kprs) >= 6:
+                        break
+                    obj_text = obj.get('objective', '')
+                    # Only objectives with a quantified target qualify
+                    if not re.search(r'\d', obj_text):
+                        continue
+                    requirement = obj_text.strip()[:150]
+                    if requirement.lower() in existing_reqs:
+                        continue
+                    kprs.append({
+                        "id": f"KPR{kpr_id}",
+                        "requirement": requirement,
+                        "perspective": perspective_map.get(p_name, 'process'),
+                        "priority": 'high',
+                        "linkedObjectiveIds": [obj['id']]
+                    })
+                    existing_reqs.add(requirement.lower())
+                    kpr_id += 1
 
         if not kprs:
             # Add default KPR

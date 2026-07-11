@@ -610,14 +610,15 @@ Always return valid JSON."""
         # Summarize analyses for the prompt
         analyses_summary = []
         for analysis in all_analyses:
+            employee_context = analysis.get("employeeContext") or {}
             analyses_summary.append({
-                "employee": analysis.get("documentName", "Unknown"),
-                "role": analysis.get("employeeContext", {}).get("role", ""),
+                "employee": employee_context.get("employeeName") or analysis.get("fileName", "Unknown"),
+                "role": employee_context.get("jobTitle", ""),
                 "alignmentScore": analysis.get("overallAlignmentScore", 0),
                 "impactScore": analysis.get("overallImpactScore", 0),
                 "quadrantDistribution": analysis.get("coherenceIndex", {}).get("quadrantDistribution", {}),
                 "gaps": analysis.get("strategicCoverage", {}),
-                "topGoals": [g.get("goal", "")[:100] for g in analysis.get("goals", [])[:3]]
+                "topGoals": [g.get("goalText", "")[:100] for g in analysis.get("goals", [])[:3]]
             })
 
         prompt = f"""Analyze this portfolio of {len(all_analyses)} employees' goals and generate an executive summary
