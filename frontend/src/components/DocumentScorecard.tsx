@@ -11,7 +11,9 @@ export function DocumentScorecard() {
   } = useAnalysis();
 
   // Find the selected analysis (or use mock data)
-  const analysis = goalAnalyses.find((a) => a.documentId === selectedDocumentId) || {
+  const realAnalysis = goalAnalyses.find((a) => a.documentId === selectedDocumentId);
+  const isSampleData = !realAnalysis;
+  const analysis = realAnalysis || {
     documentId: selectedDocumentId || 'mock',
     fileName: goalDocuments.find((d) => d.documentId === selectedDocumentId)?.fileName || 'Document',
     overallAlignmentScore: 72,
@@ -75,6 +77,18 @@ export function DocumentScorecard() {
 
   return (
     <div className="space-y-6" data-testid="document-scorecard">
+      {/* Sample Data Banner */}
+      {isSampleData && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 flex items-center space-x-2" data-testid="sample-data-banner">
+          <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-xs font-semibold uppercase tracking-wide">
+            Sample data
+          </span>
+          <p className="text-sm text-amber-800">
+            Sample data — upload and analyze goal documents to see real results.
+          </p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
         <div className="flex items-start justify-between">
@@ -130,7 +144,10 @@ export function DocumentScorecard() {
               <div className="flex items-center justify-between mb-1">
                 <span className="text-sm text-slate-600 capitalize">{perspective}</span>
                 <span className="text-sm font-medium text-slate-900">
-                  {data.covered}/{data.total} ({data.percentage}%)
+                  {data.covered}/{data.total} ({data.percentage}%){' '}
+                  <span className="text-xs text-slate-500">
+                    {data.percentage >= 80 ? '▲ strong' : data.percentage >= 50 ? '● moderate' : '▼ weak'}
+                  </span>
                 </span>
               </div>
               <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -312,6 +329,9 @@ export function DocumentScorecard() {
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-1">
                       <span className="text-xs font-mono text-slate-500">{goal.goalId}</span>
+                      <span className="text-xs text-slate-500">
+                        {goalTier.tier === 'high' ? '▲ strong' : goalTier.tier === 'moderate' ? '● moderate' : '▼ weak'}
+                      </span>
                       {quadrant && (
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           quadrant.quadrant === 'Strategic Driver'

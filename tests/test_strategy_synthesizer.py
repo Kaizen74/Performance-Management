@@ -394,3 +394,50 @@ def run_manual_tests():
 
 if __name__ == '__main__':
     run_manual_tests()
+
+
+class TestStrategyScopeDetection:
+    """Regression tests: company-wide vs department/team strategy detection."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.client = MockClaudeClient()
+
+    def test_company_wide_strategy_detected(self):
+        result = self.client.analyze_strategy(MOCK_STRATEGY_CONTENT + "\nCorporate Strategy 2030\nOur Vision drives us.")
+        assert result['strategyScope'] == 'organization'
+        assert result['scopeEntity'] is None
+
+    def test_department_strategy_detected(self):
+        text = """
+        OD & Talent Management Strategy 2026
+
+        Talent Priorities:
+        1. Succession Planning - Build leadership pipeline for critical roles
+        2. Performance Management - Achieve 90% goal-setting completion
+        """
+        result = self.client.analyze_strategy(text)
+        assert result['strategyScope'] == 'department'
+        assert result['scopeEntity'] == 'OD & Talent Management'
+
+    def test_it_strategic_goals_detected_as_department(self):
+        text = """
+        IT Strategic Goals 2026
+
+        Technology Priorities:
+        1. Cloud Migration - Move 80% of systems to cloud
+        2. Cybersecurity - Implement zero trust architecture
+        """
+        result = self.client.analyze_strategy(text)
+        assert result['strategyScope'] == 'department'
+        assert result['scopeEntity'] == 'IT'
+
+    def test_company_indicators_override_department_mentions(self):
+        text = """
+        Corporate Strategy 2030
+        Our Vision: To lead the industry.
+        Our Mission: Delivering value.
+        The HR Department and Finance teams will support enterprise goals.
+        """
+        result = self.client.analyze_strategy(text)
+        assert result['strategyScope'] == 'organization'

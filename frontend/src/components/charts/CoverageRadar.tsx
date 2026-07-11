@@ -70,6 +70,11 @@ export function CoverageRadar({ data }: CoverageRadarProps) {
                   : 'text-red-600'
               }`}
             >
+              {item.coverage >= item.benchmark
+                ? '▲'
+                : item.coverage >= item.benchmark * 0.7
+                ? '●'
+                : '▼'}{' '}
               {item.coverage}%
             </span>
           </div>

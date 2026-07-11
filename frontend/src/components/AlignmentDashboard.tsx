@@ -131,7 +131,8 @@ export function AlignmentDashboard() {
   const [seniorityFilter, setSeniorityFilter] = useState<SeniorityFilter>('all');
 
   // Use mock data if no real analyses (for demo)
-  const allAnalyses = goalAnalyses.length > 0
+  const isSampleData = goalAnalyses.length === 0;
+  const allAnalyses = !isSampleData
     ? goalAnalyses
     : generateMockAnalyses(goalDocuments);
 
@@ -244,6 +245,9 @@ export function AlignmentDashboard() {
   const totalGoalsClassified = portfolioCoherence.totalStrategicDrivers + portfolioCoherence.totalBusyWork +
     portfolioCoherence.totalRogueProjects + portfolioCoherence.totalDistractions;
 
+  // Guard against division by zero (renders "NaN%" otherwise)
+  const pct = (n: number) => totalGoalsClassified > 0 ? Math.round((n / totalGoalsClassified) * 100) : 0;
+
   const handleSelectDocument = (docId: string) => {
     selectDocument(docId);
     setCurrentStep('documentDetail');
@@ -251,6 +255,18 @@ export function AlignmentDashboard() {
 
   return (
     <div className="space-y-6" data-testid="alignment-dashboard">
+      {/* Sample Data Banner */}
+      {isSampleData && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 flex items-center space-x-2" data-testid="sample-data-banner">
+          <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-xs font-semibold uppercase tracking-wide">
+            Sample data
+          </span>
+          <p className="text-sm text-amber-800">
+            Sample data — upload and analyze goal documents to see real results.
+          </p>
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
@@ -414,10 +430,10 @@ export function AlignmentDashboard() {
               <h4 className="text-sm font-semibold text-slate-700 mb-2">Executive Summary</h4>
               <p className="text-sm text-slate-600">
                 {portfolioCoherence.avgScore >= 80
-                  ? `Strong strategic execution posture. ${Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% of goals qualify as Strategic Drivers with clear outcome orientation and strategy linkage.`
+                  ? `Strong strategic execution posture. ${pct(portfolioCoherence.totalStrategicDrivers)}% of goals qualify as Strategic Drivers with clear outcome orientation and strategy linkage.`
                   : portfolioCoherence.avgScore >= 50
-                  ? `Moderate strategic alignment with execution gaps. Only ${Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% of goals are Strategic Drivers. The remaining ${100 - Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% represent efficiency loss or strategic drift.`
-                  : `Critical strategic drift detected. Just ${Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}% of goals drive strategic outcomes. The portfolio requires substantial revision to align with organizational priorities.`}
+                  ? `Moderate strategic alignment with execution gaps. Only ${pct(portfolioCoherence.totalStrategicDrivers)}% of goals are Strategic Drivers. The remaining ${100 - pct(portfolioCoherence.totalStrategicDrivers)}% represent efficiency loss or strategic drift.`
+                  : `Critical strategic drift detected. Just ${pct(portfolioCoherence.totalStrategicDrivers)}% of goals drive strategic outcomes. The portfolio requires substantial revision to align with organizational priorities.`}
               </p>
             </div>
 
@@ -428,21 +444,21 @@ export function AlignmentDashboard() {
                 <ul className="text-sm text-amber-700 space-y-2">
                   {portfolioCoherence.totalBusyWork > 0 && (
                     <li>
-                      <span className="font-medium">Busy Work Trap ({portfolioCoherence.totalBusyWork} goals, {Math.round((portfolioCoherence.totalBusyWork / totalGoalsClassified) * 100)}%):</span>{' '}
+                      <span className="font-medium">Busy Work Trap ({portfolioCoherence.totalBusyWork} goals, {pct(portfolioCoherence.totalBusyWork)}%):</span>{' '}
                       These goals show strategic intent but measure activities instead of outcomes.
                       Reframe using action verbs (increase, reduce, achieve) with quantifiable targets.
                     </li>
                   )}
                   {portfolioCoherence.totalRogueProjects > 0 && (
                     <li>
-                      <span className="font-medium">Rogue Projects ({portfolioCoherence.totalRogueProjects} goals, {Math.round((portfolioCoherence.totalRogueProjects / totalGoalsClassified) * 100)}%):</span>{' '}
+                      <span className="font-medium">Rogue Projects ({portfolioCoherence.totalRogueProjects} goals, {pct(portfolioCoherence.totalRogueProjects)}%):</span>{' '}
                       Well-formed outcome goals that don't connect to current strategy.
                       Review if strategy needs updating or if goals should be redirected.
                     </li>
                   )}
                   {portfolioCoherence.totalDistractions > 0 && (
                     <li>
-                      <span className="font-medium">Distractions ({portfolioCoherence.totalDistractions} goals, {Math.round((portfolioCoherence.totalDistractions / totalGoalsClassified) * 100)}%):</span>{' '}
+                      <span className="font-medium">Distractions ({portfolioCoherence.totalDistractions} goals, {pct(portfolioCoherence.totalDistractions)}%):</span>{' '}
                       Neither outcome-focused nor strategically aligned. Consider eliminating or completely redesigning these goals.
                     </li>
                   )}
@@ -476,7 +492,7 @@ export function AlignmentDashboard() {
                 )}
                 {portfolioCoherence.totalStrategicDrivers < totalGoalsClassified * 0.5 && (
                   <li>
-                    Target minimum 50% Strategic Drivers in next goal-setting cycle (currently {Math.round((portfolioCoherence.totalStrategicDrivers / totalGoalsClassified) * 100)}%)
+                    Target minimum 50% Strategic Drivers in next goal-setting cycle (currently {pct(portfolioCoherence.totalStrategicDrivers)}%)
                   </li>
                 )}
               </ol>

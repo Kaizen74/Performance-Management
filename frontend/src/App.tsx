@@ -81,16 +81,22 @@ function AppContent() {
 }
 
 function StepIndicator({ currentStep }: { currentStep: string }) {
+  // Each displayed step groups one or more AnalysisStep values so the
+  // indicator never desyncs from the current step.
   const steps = [
-    { id: 'apiConfig', label: 'API' },
-    { id: 'uploadStrategy', label: 'Strategy' },
-    { id: 'uploadGoals', label: 'Goals' },
-    { id: 'processing', label: 'Analysis' },
-    { id: 'dashboard', label: 'Results' },
-    { id: 'export', label: 'Export' },
+    { id: 'apiConfig', label: 'API', analysisSteps: ['apiConfig'] },
+    { id: 'uploadStrategy', label: 'Strategy', analysisSteps: ['uploadStrategy'] },
+    { id: 'uploadGoals', label: 'Goals', analysisSteps: ['uploadGoals'] },
+    { id: 'processing', label: 'Analysis', analysisSteps: ['processing', 'framework'] },
+    {
+      id: 'dashboard',
+      label: 'Results',
+      analysisSteps: ['dashboard', 'documentDetail', 'recommendations', 'portfolioRecommendations'],
+    },
+    { id: 'export', label: 'Export', analysisSteps: ['export'] },
   ];
 
-  const currentIndex = steps.findIndex(s => s.id === currentStep);
+  const currentIndex = steps.findIndex(s => s.analysisSteps.includes(currentStep));
 
   return (
     <div className="flex items-center space-x-2">
