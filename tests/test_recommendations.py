@@ -111,16 +111,20 @@ class TestGoalRecommendationEngine:
 
         print(f"Generated {len(recommendations['recommendations'])} recommendations")
 
-    def test_five_recommendations_generated(self):
-        """Test that exactly 5 recommendations are generated."""
+    def test_one_recommendation_per_weak_goal(self):
+        """Test that one recommendation is generated per weak goal (max 5)."""
         recommendations = self.engine.generate_recommendations(
             MOCK_FRAMEWORK,
             MOCK_LOW_ALIGNMENT_DOC
         )
 
-        assert len(recommendations['recommendations']) == 5
+        # MOCK_LOW_ALIGNMENT_DOC has 3 goals; the engine generates one
+        # recommendation per goal needing improvement, capped at 5
+        rec_count = len(recommendations['recommendations'])
+        assert 1 <= rec_count <= 5
+        assert rec_count == 3
 
-        print("Five recommendations generated")
+        print(f"{rec_count} recommendations generated (one per weak goal)")
 
     def test_recommendation_structure(self):
         """Test that each recommendation has required fields."""
@@ -252,7 +256,8 @@ class TestGoalRecommendationEngine:
 
         prioritized = self.engine.prioritize_recommendations(recommendations, MOCK_FRAMEWORK)
 
-        assert len(prioritized) == 5
+        # Prioritization preserves the goal-bound recommendation count
+        assert len(prioritized) == len(recommendations['recommendations'])
 
         # First recommendation should have highest score
         if len(prioritized) > 1:
@@ -316,7 +321,8 @@ class TestMockRecommendationClient:
         )
 
         assert 'recommendations' in result
-        assert len(result['recommendations']) == 5
+        # One recommendation per weak goal (fixture has 3 goals), capped at 5
+        assert 1 <= len(result['recommendations']) <= 5
         assert 'projectedNewAlignmentScore' in result
 
     def test_mock_connection_test(self):

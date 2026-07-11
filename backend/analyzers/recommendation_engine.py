@@ -350,14 +350,14 @@ class MockRecommendationClient:
         goals = alignment_analysis.get('goals', [])
         employee_context = alignment_analysis.get('employeeContext', {})
 
-        # Extract strategic objectives from framework
-        objectives = strategic_framework.get('strategicObjectives', [])
-        obj_map = {obj.get('objectiveId', ''): obj for obj in objectives}
+        # Extract strategic objectives from framework (flatten BSC perspectives)
+        objectives = self._flatten_framework_objectives(strategic_framework)
+        obj_map = {obj.get('id', ''): obj for obj in objectives}
 
         # Identify goals needing improvement (Distraction, Busy Work Trap, Rogue Project)
         goals_to_improve = []
         for goal in goals:
-            quadrant = goal.get('classification', {}).get('quadrant', '')
+            quadrant = goal.get('quadrantClassification', {}).get('quadrant', '')
             if quadrant in ['Distraction', 'Busy Work Trap', 'Rogue Project']:
                 goals_to_improve.append(goal)
 
@@ -396,25 +396,26 @@ class MockRecommendationClient:
     ) -> Dict[str, Any]:
         """Create a contextual recommendation for a specific goal."""
         goal_text = goal.get('goalText', '')
-        quadrant = goal.get('classification', {}).get('quadrant', 'Distraction')
-        linked_objectives = goal.get('linkedStrategicObjectives', [])
+        classification = goal.get('quadrantClassification', {})
+        quadrant = classification.get('quadrant', 'Distraction')
+        linked_objectives = goal.get('alignedObjectives', [])
         alignment_score = goal.get('alignmentScore', 0)
 
         job_title = employee_context.get('jobTitle', '')
         seniority = employee_context.get('seniorityLevel', 'mid-level')
         department = employee_context.get('department', '')
 
-        # Get strategic objectives from framework
-        objectives = framework.get('strategicObjectives', [])
+        # Get strategic objectives from framework (flatten BSC perspectives)
+        objectives = self._flatten_framework_objectives(framework)
         obj_by_perspective = {'F': [], 'C': [], 'P': [], 'I': [], 'L': []}
         for obj in objectives:
-            obj_id = obj.get('objectiveId', '')
+            obj_id = obj.get('id', '')
             if obj_id and obj_id[0] in obj_by_perspective:
                 obj_by_perspective[obj_id[0]].append(obj)
 
         # Determine what type of improvement is needed
-        is_outcome = goal.get('classification', {}).get('isOutcome', False)
-        is_aligned = goal.get('classification', {}).get('isAligned', False)
+        is_outcome = classification.get('rigorCheck', {}).get('isOutcome', False)
+        is_aligned = classification.get('alignmentCheck', {}).get('isAligned', False)
 
         # Generate revised goal based on the original and what's missing
         revised = self._generate_revised_goal(
@@ -589,12 +590,12 @@ class MockRecommendationClient:
 
         relevant_obj = None
         for obj in objectives:
-            if obj.get('objectiveId', '').startswith(target_prefix):
+            if obj.get('id', '').startswith(target_prefix):
                 relevant_obj = obj
                 break
 
         if relevant_obj:
-            obj_desc = relevant_obj.get('description', '')[:50]
+            obj_desc = relevant_obj.get('objective', '')[:50]
             return f"Contribute to '{obj_desc}' by {original.lower()[:120]}"
 
         return f"Align to organizational strategy by {original.lower()[:150]}"
@@ -670,7 +671,7 @@ class MockRecommendationClient:
 
         # Add at least one from each matched perspective
         for obj in objectives:
-            obj_id = obj.get('objectiveId', '')
+            obj_id = obj.get('id', '')
             if obj_id and obj_id[0] in matched_perspectives:
                 if obj_id not in suggested:
                     suggested.append(obj_id)
@@ -680,11 +681,20 @@ class MockRecommendationClient:
         # If nothing matched, suggest first from each main perspective
         if not suggested:
             for obj in objectives[:4]:
-                obj_id = obj.get('objectiveId', '')
+                obj_id = obj.get('id', '')
                 if obj_id:
                     suggested.append(obj_id)
 
         return suggested[:3]
+
+    @staticmethod
+    def _flatten_framework_objectives(framework: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Flatten strategicPerspectives into a single list of objective dicts."""
+        objectives = []
+        perspectives = framework.get('strategicPerspectives', {})
+        for perspective_data in perspectives.values():
+            objectives.extend(perspective_data.get('objectives', []))
+        return objectives
 
     def _suggest_metrics(self, topic: str) -> List[str]:
         """Suggest metrics based on goal topic."""
@@ -704,23 +714,27 @@ class MockRecommendationClient:
         quadrant: str,
         job_title: str
     ) -> Dict[str, str]:
-        """Generate contextual evidence for the recommendation."""
+        """Generate research-grounded rationale for the recommendation.
+
+        Sources are real published frameworks cited at the principle level —
+        no invented statistics.
+        """
         quadrant_evidence = {
             'Distraction': {
-                'source': 'Performance Management Research - Harvard Business Review',
-                'finding': 'Goals lacking both strategic alignment and measurable outcomes have <20% completion rates and minimal organizational impact'
+                'source': 'Goal-setting theory (Locke & Latham)',
+                'finding': 'Specific, challenging goals direct attention and effort toward goal-relevant activity; goals with neither strategic linkage nor measurable outcomes direct effort away from what matters'
             },
             'Busy Work Trap': {
-                'source': 'OKR Implementation Studies - Measure What Matters',
-                'finding': 'Converting activity-based goals to outcome-oriented objectives increases achievement rates by 30-40%'
+                'source': 'OKR practice (Doerr, "Measure What Matters")',
+                'finding': 'Key results should measure outcomes, not activities — reframing activity goals as measurable outcomes restores the link between effort and impact'
             },
             'Rogue Project': {
-                'source': 'Strategic Alignment Research - MIT Sloan Management Review',
-                'finding': 'High-quality individual work without strategic connection captures only 40% of potential organizational value'
+                'source': 'Strategy execution research (Kaplan & Norton, Balanced Scorecard)',
+                'finding': 'Well-executed work that is disconnected from strategic objectives produces local wins without organizational line-of-sight; linking it to a scorecard objective preserves the work while restoring alignment'
             },
             'Strategic Driver': {
-                'source': 'High-Performance Organization Studies',
-                'finding': 'Well-aligned outcome goals with clear metrics achieve 85%+ completion rates'
+                'source': 'Goal-setting theory (Locke & Latham)',
+                'finding': 'Specific, measurable, strategically linked goals sustain the highest performance — consider raising difficulty to a stretch level, since challenging goals outperform easily attainable ones'
             }
         }
         return quadrant_evidence.get(quadrant, quadrant_evidence['Distraction'])
@@ -753,6 +767,10 @@ class MockRecommendationClient:
 
         if not notes:
             notes.append("Continue strong alignment practices and consider stretch targets")
+
+        # Goal-commitment research: goals authored for an employee are only
+        # effective once the employee adapts and owns them
+        notes.append("Treat this revision as a draft — adapt the wording with the employee so they own the final goal")
 
         return '. '.join(notes)
 
