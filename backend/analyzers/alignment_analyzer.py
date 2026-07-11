@@ -157,6 +157,11 @@ class AlignmentAnalyzer:
         # Validate and enhance analysis
         analysis = self._validate_analysis(raw_analysis)
 
+        # Backfill quadrant classification / coherence index when the client
+        # didn't provide them (the real Claude API path), so both analysis
+        # paths expose the same schema to the frontend and exports
+        analysis = self._ensure_quadrant_coherence(analysis, employee_context)
+
         # Calculate strategic coverage
         coverage = self._calculate_coverage(analysis)
         analysis['strategicCoverage'] = coverage
@@ -341,6 +346,56 @@ class AlignmentAnalyzer:
             'strategicCoverage': {},
             'recommendations': []
         }
+
+    def _ensure_quadrant_coherence(
+        self,
+        analysis: Dict[str, Any],
+        employee_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Ensure quadrant classification, coherence index, and strategic
+        narrative are present on the analysis.
+
+        The MockAlignmentClient computes these natively; the real Claude
+        client does not return them, so we derive them here with the same
+        Rigor x Alignment engine to keep both paths schema-identical.
+        """
+        goals = analysis.get('goals', [])
+        needs_classification = any('quadrantClassification' not in g for g in goals)
+        needs_coherence = 'coherenceIndex' not in analysis
+
+        if not goals or not (needs_classification or needs_coherence):
+            return analysis
+
+        engine = MockAlignmentClient()
+        org_purpose = self.framework.get('organizationalPurpose', {})
+        engine.vision = org_purpose.get('vision', 'To be an industry leader')
+        engine.mission = org_purpose.get('mission', 'Delivering value to stakeholders')
+        engine.values = org_purpose.get('values', ['Excellence', 'Innovation', 'Integrity'])
+        strategic_themes = self.framework.get('strategicThemes', [])
+        engine.theme_names = [t.get('name', '') for t in strategic_themes if t.get('name')]
+        if not engine.theme_names:
+            engine.theme_names = ['Operational Excellence', 'Customer Focus', 'Innovation']
+        engine.strategic_objectives = engine._extract_objectives(self.framework)
+
+        seniority = 'mid'
+        if employee_context:
+            seniority = employee_context.get('seniorityLevel') or seniority
+
+        if needs_classification:
+            analysis['goals'] = engine._classify_goals_matrix(goals, self.framework)
+
+        if 'coherenceIndex' not in analysis:
+            coherence = engine._calculate_coherence_index(
+                analysis['goals'], self.framework, seniority
+            )
+            analysis['coherenceIndex'] = coherence
+            if 'strategicNarrative' not in analysis:
+                analysis['strategicNarrative'] = engine._generate_coherence_narrative(
+                    coherence, self.framework
+                )
+
+        return analysis
 
     def _validate_analysis(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
         """

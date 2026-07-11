@@ -234,10 +234,12 @@ class TestAlignmentAnalyzer:
         print(f"Batch analysis passed: {len(results)} documents")
 
     def test_max_documents_limit(self):
-        """Test that document limit is enforced."""
+        """Test that document limit is enforced (portfolio-scale cap of 500)."""
+        from analyzers.alignment_analyzer import AlignmentAnalyzer
+
         documents = [
             {'fileName': f'goals{i}.docx', 'extractedText': 'Goal text'}
-            for i in range(16)
+            for i in range(AlignmentAnalyzer.MAX_GOAL_DOCUMENTS + 1)
         ]
 
         with pytest.raises(ValueError) as exc_info:
