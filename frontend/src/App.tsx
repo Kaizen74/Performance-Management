@@ -15,12 +15,16 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
+
       {/* Header */}
       <header className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">
+              <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
                 Strategic Goal Alignment Analyzer
               </h1>
               <p className="text-sm text-slate-500 mt-1">
@@ -32,14 +36,19 @@ function AppContent() {
         </div>
       </header>
 
-      {/* Error Banner */}
+      {/* Error Banner — announced to screen readers, and not signalled by
+          color alone (icon + "Error" label carry the meaning too). */}
       {error && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-4">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <p className="text-red-700">{error}</p>
+        <div role="alert" className="bg-rose-50 border-l-4 border-tier-low">
+          <div className="max-w-7xl mx-auto px-4 py-3 sm:px-6 lg:px-8 flex items-start justify-between gap-4">
+            <p className="text-rose-800 text-sm">
+              <span aria-hidden="true" className="mr-2">⚠</span>
+              <span className="font-semibold">Error:</span> {error}
+            </p>
             <button
+              type="button"
               onClick={() => setError(null)}
-              className="text-red-500 hover:text-red-700"
+              className="text-sm font-medium text-rose-700 hover:text-rose-900 hover:underline shrink-0"
             >
               Dismiss
             </button>
@@ -48,7 +57,7 @@ function AppContent() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {currentStep === 'apiConfig' && <APIKeyPanel />}
         {currentStep === 'uploadStrategy' && (
           <DocumentUploader
@@ -99,33 +108,49 @@ function StepIndicator({ currentStep }: { currentStep: string }) {
   const currentIndex = steps.findIndex(s => s.analysisSteps.includes(currentStep));
 
   return (
-    <div className="flex items-center space-x-2">
-      {steps.map((step, index) => (
-        <div key={step.id} className="flex items-center">
-          <div
-            className={`
-              w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium
-              ${index <= currentIndex
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-200 text-slate-500'
-              }
-            `}
-          >
-            {index + 1}
-          </div>
-          <span className="ml-2 text-sm text-slate-600 hidden sm:inline">
-            {step.label}
-          </span>
-          {index < steps.length - 1 && (
-            <div
-              className={`w-8 h-0.5 mx-2 ${
-                index < currentIndex ? 'bg-blue-600' : 'bg-slate-200'
-              }`}
-            />
-          )}
-        </div>
-      ))}
-    </div>
+    <nav aria-label="Analysis progress">
+      <ol className="flex items-center gap-1 sm:gap-2">
+        {steps.map((step, index) => {
+          const isComplete = index < currentIndex;
+          const isCurrent = index === currentIndex;
+          return (
+            <li key={step.id} className="flex items-center">
+              <span
+                className={`
+                  w-8 h-8 rounded-full flex items-center justify-center
+                  text-sm font-medium tabular-nums
+                  ${isCurrent ? 'bg-brand-primary text-white ring-2 ring-brand-primary ring-offset-2' : ''}
+                  ${isComplete ? 'bg-brand-primary text-white' : ''}
+                  ${!isCurrent && !isComplete ? 'bg-slate-200 text-slate-500' : ''}
+                `}
+                aria-current={isCurrent ? 'step' : undefined}
+              >
+                {/* Completed steps read as done without relying on color */}
+                {isComplete ? <span aria-hidden="true">✓</span> : index + 1}
+                <span className="sr-only">
+                  {isComplete ? 'completed' : isCurrent ? 'current step' : 'upcoming step'}
+                </span>
+              </span>
+              <span
+                className={`ml-2 text-sm hidden sm:inline ${
+                  isCurrent ? 'font-semibold text-slate-900' : 'text-slate-600'
+                }`}
+              >
+                {step.label}
+              </span>
+              {index < steps.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className={`w-4 sm:w-8 h-0.5 mx-1 sm:mx-2 ${
+                    isComplete ? 'bg-brand-primary' : 'bg-slate-200'
+                  }`}
+                />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
