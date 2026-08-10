@@ -60,8 +60,19 @@ MOCK_FRAMEWORK = {
 
 
 def generate_mock_analysis_results(count: int = 5):
-    """Generate mock analysis results for testing."""
-    seniority_levels = ['executive', 'senior', 'mid', 'junior', 'senior']
+    """Generate mock analysis results for testing.
+
+    Seniority values match the canonical set emitted by
+    GoalsTableProcessor._infer_seniority, plus one blank to exercise the
+    'seniority not stated' bucket.
+    """
+    seniority_levels = [
+        'senior management',
+        'team leader',
+        'individual contributor',
+        '',  # no seniority recorded in the source upload
+        'team leader',
+    ]
     results = []
 
     for i in range(count):
@@ -644,3 +655,46 @@ class TestExportIntegration:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestSeniorityReconciliation:
+    """Seniority buckets must reconcile with the dashboard filter.
+
+    The frontend (frontend/src/lib/seniority.ts) buckets every analysis into
+    exactly one of four groups. This export must do the same, or the same
+    upload shows different headcounts in the dashboard and the workbook.
+    """
+
+    def setup_method(self):
+        self.results = generate_mock_analysis_results(5)
+        self.engine = ExcelExportEngine(MOCK_FRAMEWORK, self.results, {})
+
+    def test_canonical_buckets_used(self):
+        stats = self.engine._calculate_seniority_stats()
+        assert set(stats.keys()) == {
+            'senior management',
+            'team leader',
+            'individual contributor',
+            'seniority not stated',
+        }
+
+    def test_every_valid_result_counted_exactly_once(self):
+        """No employee is dropped and none is double-counted."""
+        stats = self.engine._calculate_seniority_stats()
+        total_bucketed = sum(s['count'] for s in stats.values())
+        valid_results = [r for r in self.results if 'error' not in r]
+        assert total_bucketed == len(valid_results)
+
+    def test_blank_seniority_lands_in_not_stated(self):
+        """A blank seniority is reported, not silently dropped or counted as IC."""
+        stats = self.engine._calculate_seniority_stats()
+        # Fixture index 3 has an empty seniority value
+        assert stats['seniority not stated']['count'] == 1
+        assert stats['individual contributor']['count'] == 1
+
+    def test_error_results_excluded_from_all_buckets(self):
+        results = generate_mock_analysis_results(3)
+        results.append({'fileName': 'broken.docx', 'error': 'parse failed'})
+        engine = ExcelExportEngine(MOCK_FRAMEWORK, results, {})
+        stats = engine._calculate_seniority_stats()
+        assert sum(s['count'] for s in stats.values()) == 3

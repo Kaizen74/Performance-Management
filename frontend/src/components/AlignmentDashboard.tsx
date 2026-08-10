@@ -2,46 +2,12 @@ import { useState } from 'react';
 import { useAnalysis } from '../contexts/AnalysisContext';
 import { CoverageRadar } from './charts/CoverageRadar';
 import { PortfolioRanking } from './charts/PortfolioRanking';
-
-// Seniority filter options
-type SeniorityFilter = 'all' | 'senior_management' | 'team_leader' | 'individual_contributor';
-
-const SENIORITY_LABELS: Record<SeniorityFilter, string> = {
-  all: 'All Employees',
-  senior_management: 'Senior Management',
-  team_leader: 'Team Leaders',
-  individual_contributor: 'Individual Contributors',
-};
-
-// Helper to categorize seniority level
-function categorizeSeniority(seniorityLevel?: string): SeniorityFilter {
-  if (!seniorityLevel) return 'individual_contributor';
-
-  const level = seniorityLevel.toLowerCase().trim();
-
-  // Senior Management patterns
-  const seniorPatterns = [
-    'executive', 'senior', 'director', 'vp', 'vice president',
-    'c-level', 'ceo', 'cfo', 'coo', 'cto', 'cio', 'chro',
-    'head', 'chief', 'president', 'svp', 'evp', 'managing director',
-    'general manager', 'gm', 'partner', 'principal'
-  ];
-  if (seniorPatterns.some(p => level.includes(p))) {
-    return 'senior_management';
-  }
-
-  // Team Leader patterns
-  const teamLeaderPatterns = [
-    'team leader', 'team lead', 'manager', 'supervisor',
-    'lead', 'coordinator', 'section head'
-  ];
-  if (teamLeaderPatterns.some(p => level.includes(p))) {
-    return 'team_leader';
-  }
-
-  // Default to Individual Contributor
-  return 'individual_contributor';
-}
+import {
+  categorizeSeniority,
+  SENIORITY_LABELS,
+  SENIORITY_FILTER_ORDER,
+  type SeniorityFilter,
+} from '../lib/seniority';
 
 // Mock seniority levels for demo data
 const MOCK_SENIORITY_LEVELS = [
@@ -145,12 +111,22 @@ export function AlignmentDashboard() {
       });
 
   // Count employees by seniority for filter badges
-  const seniorityCounts = {
+  const seniorityCounts: Record<SeniorityFilter, number> = {
     all: allAnalyses.length,
-    senior_management: allAnalyses.filter(a => categorizeSeniority(a.employeeContext?.seniorityLevel) === 'senior_management').length,
-    team_leader: allAnalyses.filter(a => categorizeSeniority(a.employeeContext?.seniorityLevel) === 'team_leader').length,
-    individual_contributor: allAnalyses.filter(a => categorizeSeniority(a.employeeContext?.seniorityLevel) === 'individual_contributor').length,
+    senior_management: 0,
+    team_leader: 0,
+    individual_contributor: 0,
+    unspecified: 0,
   };
+  allAnalyses.forEach((a) => {
+    seniorityCounts[categorizeSeniority(a.employeeContext?.seniorityLevel)] += 1;
+  });
+
+  // Only offer buckets that actually contain employees, so the filter row
+  // never shows a dead "Seniority not stated" chip for a clean upload.
+  const availableFilters = SENIORITY_FILTER_ORDER.filter(
+    (f) => f === 'all' || seniorityCounts[f] > 0
+  );
 
   // Calculate aggregate metrics
   const avgAlignment = analyses.length > 0
@@ -514,46 +490,64 @@ export function AlignmentDashboard() {
 
       {/* Seniority Filter */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-slate-700">Filter by Seniority:</span>
-            <div className="flex items-center space-x-2">
-              {(Object.keys(SENIORITY_LABELS) as SeniorityFilter[]).map((filter) => (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div
+            className="flex flex-wrap items-center gap-2"
+            role="group"
+            aria-label="Filter employees by seniority"
+          >
+            <span className="text-sm font-medium text-slate-700">Filter by seniority</span>
+            {availableFilters.map((filter) => {
+              const isActive = seniorityFilter === filter;
+              return (
                 <button
                   key={filter}
+                  type="button"
                   onClick={() => setSeniorityFilter(filter)}
+                  aria-pressed={isActive}
                   className={`
-                    px-3 py-1.5 rounded-full text-sm font-medium transition-colors
-                    ${seniorityFilter === filter
-                      ? 'bg-blue-600 text-white'
+                    inline-flex items-center min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-full
+                    text-sm font-medium transition-colors
+                    focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary
+                    focus-visible:ring-offset-2
+                    ${isActive
+                      ? 'bg-brand-primary text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }
                   `}
                 >
                   {SENIORITY_LABELS[filter]}
-                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${
-                    seniorityFilter === filter
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-slate-200 text-slate-500'
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs tabular-nums ${
+                    isActive ? 'bg-white/25 text-white' : 'bg-slate-200 text-slate-600'
                   }`}>
                     {seniorityCounts[filter]}
                   </span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
           {seniorityFilter !== 'all' && (
             <button
+              type="button"
               onClick={() => setSeniorityFilter('all')}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-brand-primary hover:underline focus:outline-none
+                         focus-visible:ring-2 focus-visible:ring-brand-primary
+                         focus-visible:ring-offset-2 rounded"
             >
               Clear filter
             </button>
           )}
         </div>
+        {seniorityCounts.unspecified > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            {seniorityCounts.unspecified} of {allAnalyses.length} employees have no
+            seniority recorded in the upload. They are grouped under
+            “{SENIORITY_LABELS.unspecified}” and are counted the same way in the Excel export.
+          </p>
+        )}
         {seniorityFilter !== 'all' && analyses.length === 0 && (
-          <p className="mt-3 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded">
-            No employees found in "{SENIORITY_LABELS[seniorityFilter]}" category.
+          <p className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded">
+            No employees in “{SENIORITY_LABELS[seniorityFilter]}”. Clear the filter to see everyone.
           </p>
         )}
       </div>

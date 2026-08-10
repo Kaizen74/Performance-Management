@@ -564,18 +564,35 @@ class ExcelExportEngine:
                     else:
                         cell.fill = PatternFill('solid', fgColor=self.COLORS['danger'])
 
+    # Canonical seniority buckets emitted by GoalsTableProcessor._infer_seniority.
+    # Must stay in sync with frontend/src/lib/seniority.ts so the dashboard
+    # filter and this export report identical headcounts.
+    SENIORITY_LEVELS = ['senior management', 'team leader', 'individual contributor']
+    SENIORITY_UNSPECIFIED = 'seniority not stated'
+
     def _calculate_seniority_stats(self) -> Dict[str, Dict[str, Any]]:
-        """Calculate statistics by seniority level."""
+        """Calculate statistics by seniority level.
+
+        Employees with no seniority recorded are reported under their own
+        'seniority not stated' bucket rather than being dropped, so the totals
+        here reconcile with the dashboard's filter counts.
+        """
         seniority_data = {}
-        # Levels emitted by GoalsTableProcessor._infer_seniority
-        levels = ['senior management', 'team leader', 'individual contributor']
+        levels = self.SENIORITY_LEVELS + [self.SENIORITY_UNSPECIFIED]
 
         for level in levels:
-            level_results = [
-                r for r in self.results
-                if ((r.get('employeeContext', {}) or r.get('employeeMetadata', {})).get('seniorityLevel') or '').lower() == level
-                and 'error' not in r
-            ]
+            if level == self.SENIORITY_UNSPECIFIED:
+                level_results = [
+                    r for r in self.results
+                    if 'error' not in r
+                    and not ((r.get('employeeContext', {}) or r.get('employeeMetadata', {})).get('seniorityLevel') or '').strip()
+                ]
+            else:
+                level_results = [
+                    r for r in self.results
+                    if ((r.get('employeeContext', {}) or r.get('employeeMetadata', {})).get('seniorityLevel') or '').lower().strip() == level
+                    and 'error' not in r
+                ]
 
             if level_results:
                 avg_alignment = sum(r.get('overallAlignmentScore', 0) for r in level_results) / len(level_results)

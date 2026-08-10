@@ -1,21 +1,24 @@
 # Python
+# NOTE: packaging dirs are anchored with a leading slash so they only match at
+# the repo root. Unanchored ("lib/") they match at any depth and silently
+# exclude real source directories such as frontend/src/lib/.
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
 *.egg-info/
 .installed.cfg
 *.egg
