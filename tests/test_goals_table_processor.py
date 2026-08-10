@@ -111,3 +111,74 @@ class TestCsvProcessing:
         assert processor.can_handle('goals.csv') is True
         assert processor.can_handle('goals.xlsx') is True
         assert processor.can_handle('strategy.pdf') is False
+
+
+class TestEnumeratedGoalColumns:
+    """Enumerated goal columns hold separate goals and must not be merged.
+
+    'Goal 1' and 'Goal 2' are two goals. 'KPI Name' and 'KPI Metric' are two
+    facets of one goal. Merging the first kind understates the goal count and
+    corrupts the Coherence Index, which divides points by goal count.
+    """
+
+    def _process(self, csv_text):
+        with tempfile.NamedTemporaryFile('w', suffix='.csv', delete=False) as f:
+            f.write(csv_text)
+            path = f.name
+        try:
+            return GoalsTableProcessor().process(path)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    def test_enumerated_goals_are_split(self):
+        result = self._process(
+            "Employee Name,Job Title,Goal 1,Goal 1 Weight,Goal 2,Goal 2 Weight\n"
+            "Alice Tan,Ops Manager,\"Reduce unit costs by 15% by Q4\",50,"
+            "\"Achieve NPS of 72\",50\n"
+        )
+        employee = result['employees'][0]
+        assert employee['goalCount'] == 2
+        texts = [g['goalText'] for g in employee['goals']]
+        assert 'Reduce unit costs by 15% by Q4' in texts
+        assert 'Achieve NPS of 72' in texts
+        # No goal is a merged blob of both
+        assert not any(' | ' in t for t in texts)
+
+    def test_each_enumerated_goal_keeps_its_own_weight(self):
+        result = self._process(
+            "Employee Name,Goal 1,Goal 1 Weight,Goal 2,Goal 2 Weight\n"
+            "Alice Tan,\"Grow revenue 12%\",70,\"Improve retention\",30\n"
+        )
+        goals = result['employees'][0]['goals']
+        weights = {g['goalText']: g['weight'] for g in goals}
+        assert weights['Grow revenue 12%'] == '70'
+        assert weights['Improve retention'] == '30'
+
+    def test_descriptive_facets_still_merge(self):
+        """The SAP SuccessFactors format must be unaffected by the split."""
+        result = self._process(
+            "Subject Full Name,Subject Job Title,KPI Category,KPI Name,KPI Metric,Weightage\n"
+            "Ben Lim,Analyst,Financial,Cost Control,"
+            "\"Reduce spend by 10% versus budget\",100\n"
+        )
+        employee = result['employees'][0]
+        assert employee['goalCount'] == 1
+        assert employee['goals'][0]['category'] == 'Financial'
+
+    def test_blank_enumerated_goal_is_skipped(self):
+        result = self._process(
+            "Employee Name,Goal 1,Goal 2,Goal 3\n"
+            "Cara Ng,\"Grow revenue 12%\",,\"Launch new service line\"\n"
+        )
+        assert result['employees'][0]['goalCount'] == 2
+
+    def test_trailing_number_helper(self):
+        parse = GoalsTableProcessor._trailing_number
+        assert parse('Goal 1') == 1
+        assert parse('KPI 2 Metric') == 2
+        assert parse('Goal Description') is None
+        # A four-digit run is a year, not an enumeration index
+        assert parse('Goal 2026') is None

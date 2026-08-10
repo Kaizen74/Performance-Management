@@ -3,8 +3,11 @@
 ## Current Status
 - **All Milestones**: COMPLETE ✅
 - **Progress**: 100%
-- **Last Updated**: 2025-12-11
-- **Total Backend Tests**: 85 passing (65 original + 20 export tests)
+- **Last Updated**: 2026-08-10
+- **Total Backend Tests**: 132 passing
+
+> This file is the milestone history. For where the project stands *right now*
+> and how to resume, see [PROJECT_STATE.md](PROJECT_STATE.md).
 
 ## Completed Milestones
 

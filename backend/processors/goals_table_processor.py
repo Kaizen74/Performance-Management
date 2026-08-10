@@ -4,6 +4,7 @@ Processes CSV/Excel files containing employee goals from HR systems (Workday, SA
 """
 
 import csv
+import re
 import uuid
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, asdict
@@ -543,8 +544,51 @@ class GoalsTableProcessor:
         category_cols = column_mapping.get('goal_category_columns', [])
         all_goal_cols = column_mapping.get('all_goal_text_columns', [])
 
-        # STRATEGY: Combine and synthesize text from ALL goal-related columns
-        # This ensures flexibility across different HR system formats
+        # STRATEGY A: Enumerated goal columns ("Goal 1", "Goal 2", "KPI 3") hold
+        # SEPARATE goals, one per number, and must not be merged. Descriptive
+        # columns ("KPI Name" + "KPI Metric") are facets of a SINGLE goal and are
+        # merged by Strategy B below. Merging enumerated columns would understate
+        # the goal count and corrupt the Coherence Index denominator.
+        enumerated = self._group_enumerated_goal_columns(all_goal_cols)
+        if len(enumerated) > 1:
+            weight_by_index = self._index_columns_by_number(weight_cols)
+            category_by_index = self._index_columns_by_number(category_cols)
+
+            for number in sorted(enumerated):
+                parts = []
+                for col in enumerated[number]:
+                    text = self._get_value(row, col)
+                    if text and len(text) > 2:
+                        parts.append(text)
+                if not parts:
+                    continue
+
+                weight = ''
+                weight_col = weight_by_index.get(number)
+                if weight_col:
+                    weight = self._get_value(row, weight_col) or ''
+                elif len(weight_cols) == 1:
+                    weight = self._get_value(row, weight_cols[0]) or ''
+
+                category = ''
+                category_col = category_by_index.get(number)
+                if category_col:
+                    category = self._get_value(row, category_col) or ''
+                elif len(category_cols) == 1:
+                    category = self._get_value(row, category_cols[0]) or ''
+
+                goals.append({
+                    'goalText': ' | '.join(parts),
+                    'description': '',
+                    'weight': weight,
+                    'category': category
+                })
+
+            if goals:
+                return goals
+
+        # STRATEGY B: Combine and synthesize text from ALL goal-related columns.
+        # This ensures flexibility across different HR system formats.
 
         # Collect all text from goal-related columns
         all_goal_texts = []
@@ -702,6 +746,40 @@ class GoalsTableProcessor:
                     goals.append(goal)
 
         return goals
+
+    @staticmethod
+    def _trailing_number(column: str) -> Optional[int]:
+        """Return the enumerating number in a column name, if any.
+
+        "Goal 1" -> 1, "KPI 2 Metric" -> 2, "Goal Description" -> None.
+        A 4-digit run is treated as a year (e.g. "Goal 2026"), not an index.
+        """
+        matches = re.findall(r'(?<!\d)(\d{1,3})(?!\d)', str(column))
+        return int(matches[0]) if matches else None
+
+    @classmethod
+    def _group_enumerated_goal_columns(cls, columns: List[str]) -> Dict[int, List[str]]:
+        """Group goal text columns by their enumerating number.
+
+        Columns without a number are excluded: they describe a single goal
+        rather than enumerating separate ones.
+        """
+        grouped: Dict[int, List[str]] = {}
+        for col in columns:
+            number = cls._trailing_number(col)
+            if number is not None:
+                grouped.setdefault(number, []).append(col)
+        return grouped
+
+    @classmethod
+    def _index_columns_by_number(cls, columns: List[str]) -> Dict[int, str]:
+        """Map each enumerated column to its number, e.g. 'Goal 2 Weight' -> 2."""
+        indexed: Dict[int, str] = {}
+        for col in columns:
+            number = cls._trailing_number(col)
+            if number is not None and number not in indexed:
+                indexed[number] = col
+        return indexed
 
     def _get_value(self, row, column: Optional[str]) -> Optional[str]:
         """Safely get a value from a row."""
